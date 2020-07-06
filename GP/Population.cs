@@ -48,9 +48,7 @@ namespace gp
         public void Add(FitnessEvaluation item)
         {
             _population.Add(item);
-            while (!item.Tick())
-            {
-            }
+            item.Evaluate();
 
             OnFitness(item);
         }
@@ -136,9 +134,7 @@ namespace gp
             var simplifiedProgram = fitnessEvaluation.Program.Simplify();
             var simplifiedFitnessEvaluation = new FitnessEvaluation(simplifiedProgram, _problem);
 
-            while (!simplifiedFitnessEvaluation.Tick((false)))
-            {
-            }
+            simplifiedFitnessEvaluation.Evaluate((false));
 
 
             if (!fitnessEvaluation.EqualResults(simplifiedFitnessEvaluation))
@@ -149,9 +145,7 @@ namespace gp
 
                 simplifiedFitnessEvaluation = new FitnessEvaluation(simplifiedProgram, _problem);
 
-                while (!simplifiedFitnessEvaluation.Tick((true)))
-                {
-                }
+                simplifiedFitnessEvaluation.Evaluate((true));
 
             }
 
@@ -198,9 +192,7 @@ namespace gp
                     }
 
                     var offspring = new FitnessEvaluation(newind, _problem);
-                    while (!offspring.Tick())
-                    {
-                    }
+                    offspring.Evaluate();
 
                     int index = NegativeTournament(rd, Gp.Tsize, offspring);
                     this._population[index] = offspring;

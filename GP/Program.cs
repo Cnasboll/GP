@@ -991,14 +991,10 @@ namespace gp
         public bool AnalyzeTestCasedifferences(FitnessEvaluation fitnessEvaluation, Program simplifiedProgram)
         {
             //We need to evaluate unknown test-cases too.
-            while (!fitnessEvaluation.Tick(false, true))
-            {
-            }
+            fitnessEvaluation.Evaluate(false, true);
 
             var simplifiedFitnessEvaluation = new FitnessEvaluation(simplifiedProgram, fitnessEvaluation.Problem);
-            while (!simplifiedFitnessEvaluation.Tick(false, true, fitnessEvaluation.Results))
-            {
-            }
+            simplifiedFitnessEvaluation.Evaluate(false, true, fitnessEvaluation.Results);
             for (int i = 0; i < fitnessEvaluation.Results.Length; ++i)
             {
                 if (fitnessEvaluation.Results[i] != simplifiedFitnessEvaluation.Results[i])
