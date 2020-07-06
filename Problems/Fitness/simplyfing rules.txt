@@ -1,0 +1,5 @@
+More rules. If all terms lack side effects:
+
+Obivously:
+(constant1 * exp) relop constant2 => exp replop constant2/constant1
+
