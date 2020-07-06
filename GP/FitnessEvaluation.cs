@@ -9,17 +9,17 @@ namespace gp
     {
         private readonly Problem _problem;
         private CallTree[] _callTrees;
-        private double? _squaredErrorSum;
+        private decimal? _errorSum;
         private int _nullResultCount;
         private Program _program;
         private RuntimeState[] _runtimeStates;
         private int _tickCount;
-        private readonly double[] _results;
+        private readonly decimal[] _results;
 
         public FitnessEvaluation(Program program, Problem problem)
         {
             _problem = problem;
-            _results = new double[problem.Count];
+            _results = new decimal[problem.Count];
             Program = program;
         }
 
@@ -27,7 +27,7 @@ namespace gp
         {
             _program = new Program(evaluation._program);
             _problem = evaluation.Problem;
-            _results = (double[]) evaluation._results.Clone();
+            _results = (decimal[]) evaluation._results.Clone();
             _callTrees = new CallTree[_problem.Count];
             _tickCount = evaluation._tickCount;
             _runtimeStates = new RuntimeState[_problem.Count];
@@ -39,12 +39,12 @@ namespace gp
                 }
             }
             _nullResultCount = evaluation._nullResultCount;
-            _squaredErrorSum = evaluation._squaredErrorSum;
+            _errorSum = evaluation._errorSum;
         }
 
         public bool Queued { get; set; }
 
-        public double? SquaredErrorSum => this._squaredErrorSum;
+        public decimal? ErrorSum => this._errorSum;
 
         public Program Program
         {
@@ -58,7 +58,7 @@ namespace gp
                     _callTrees = new CallTree[_problem.Count];
                     _tickCount = 0;
                     _nullResultCount = 0;
-                    _squaredErrorSum = 0;
+                    _errorSum = 0;
                     Queued = false;
                 }
             }
@@ -66,7 +66,7 @@ namespace gp
 
         public Problem Problem => _problem;
 
-        public double[] Results => _results;
+        public decimal[] Results => _results;
 
         public bool Tick()
         {
@@ -85,7 +85,7 @@ namespace gp
 
         bool IsUnknownTarget(int index)
         {
-            return Double.IsNaN(Problem[index][Program.Varnumber]);
+            return !Problem[index].ExpectedResult.HasValue;
         }
 
         private RuntimeState GetRuntimeState(int index)
@@ -111,10 +111,10 @@ namespace gp
             return _callTrees[index];
         }
 
-        private void DebugTarget(double[] inputs,
-                                 double expectedResult,
-                                 double? resultBeforeSimplification,
-                                 double result,
+        private void DebugTarget(decimal[] inputs,
+                                 decimal? expectedResult,
+                                 decimal? resultBeforeSimplification,
+                                 decimal result,
                                  bool printResult)
         {
             if (printResult || (resultBeforeSimplification != null && resultBeforeSimplification.Value != result))
@@ -126,15 +126,16 @@ namespace gp
                     {
                         Console.Write(",");
                     }
-                    Console.Write(inputs[i]);
+                    Console.Write(inputs[i].ToString(CultureInfo.GetCultureInfo("en-GB")
+                        .NumberFormat));
                 }
 
                 if (resultBeforeSimplification == null)
                 {
                     Console.WriteLine("] = {0} expected result = {1}", result,
-                        Double.IsNaN(expectedResult)
+                        expectedResult == null
                             ? "?"
-                            : expectedResult.ToString(CultureInfo.GetCultureInfo("en-GB")
+                            : expectedResult.Value.ToString(CultureInfo.GetCultureInfo("en-GB")
                                 .NumberFormat));
                 }
                 else if (printResult || result != resultBeforeSimplification)
@@ -142,22 +143,50 @@ namespace gp
                     Console.WriteLine("] = {0} but before simplification = {1}, expected result = {2}",
                         result,
                         resultBeforeSimplification,
-                        Double.IsNaN(expectedResult)
+                        expectedResult == null
                             ? "?"
-                            : expectedResult.ToString(CultureInfo.GetCultureInfo("en-GB")
+                            : expectedResult.Value.ToString(CultureInfo.GetCultureInfo("en-GB")
                                 .NumberFormat));
                 }
             }
         }
 
-        public bool Tick(bool printResult, bool evaluateUnknownTargets, double[] resultsBeforeSimplification)
+        public void PrintAllResults()
+        {
+            for (int targetIndex = 0; targetIndex < _problem.Targets.Count; ++targetIndex)
+            {
+                var target = _problem.Targets[targetIndex];
+
+                var expectedResult = target.ExpectedResult;
+                Console.Write("[");
+                for (int i = 0; i < _problem.Varnumber; ++i)
+                {
+                    if (i > 0)
+                    {
+                        Console.Write(",");
+                    }
+
+                    Console.Write(target[i].ToString(CultureInfo.GetCultureInfo("en-GB")
+                        .NumberFormat));
+                }
+
+
+                Console.WriteLine("] = {0} expected result = {1}", Results[targetIndex],
+                    expectedResult == null
+                        ? "?"
+                        : expectedResult.Value.ToString(CultureInfo.GetCultureInfo("en-GB")
+                            .NumberFormat));
+            }
+        }
+
+        public bool Tick(bool printResult, bool evaluateUnknownTargets, decimal[] resultsBeforeSimplification)
         {
             bool everyTargetEvaluated = true;
             bool evaluatedNewTarget = false;
 
             for (int targetIndex = 0; targetIndex < _problem.Count; ++targetIndex)
             {
-                if (!IsUnknownTarget(targetIndex) || //If we know  the expeted output, evaluate.
+                if (!IsUnknownTarget(targetIndex) || //If we know  the excpeted output, evaluate.
                     printResult || //If we're just debugging, evaluate
                     evaluateUnknownTargets || //If the expected output is unknown, but we stil want to evaluate, then do
                     resultsBeforeSimplification != null
@@ -179,7 +208,7 @@ namespace gp
                             _results[targetIndex] = callTree.Result;
 
                             DebugTarget(runtimeState.Inputs,
-                                _problem[targetIndex][Problem.Varnumber],
+                                _problem[targetIndex].ExpectedResult,
                                 resultsBeforeSimplification?[targetIndex],
                                 callTree.Result,
                                 printResult);
@@ -194,22 +223,17 @@ namespace gp
                 if (evaluatedNewTarget)
                 {
                     _nullResultCount = 0;
-                    _squaredErrorSum = 0.0;
+                    _errorSum = 0.0m;
                     for (int targetIndex = 0; targetIndex < _problem.Count; ++targetIndex)
                     {
-                        double expectedResult = Problem[targetIndex][Program.Varnumber];
+                        var expectedResult = Problem[targetIndex].ExpectedResult;
 
                         CallTree callTree = GetCallTree(targetIndex);
-                        if (Double.IsNaN(callTree.Result))
+                       if (expectedResult.HasValue)
                         {
-                            //Not good.
-                            ++_nullResultCount;
-                        }
-                        else if (!Double.IsNaN(expectedResult))
-                        {
-                            //Use the sum of the squared errors
-                            _squaredErrorSum +=
-                                Math.Pow(callTree.Result - Problem[targetIndex][Program.Varnumber], 2.0);
+                            //Use the sum of the errors
+                            _errorSum +=
+                                Math.Abs(callTree.Result - expectedResult.Value);
                         }
                     }
 
@@ -260,23 +284,58 @@ namespace gp
             return 0;
         }
 
-        public int CompareFitness(FitnessEvaluation fitnessEvaluation)
+        public bool WorseThan(FitnessEvaluation fitnessEvaluation)
         {
-            if (fitnessEvaluation.SquaredErrorSum == null)
+            return CompareFitness(fitnessEvaluation) > 0;
+        }
+
+        public bool BetterThan(FitnessEvaluation fitnessEvaluation)
+        {
+            return CompareFitness(fitnessEvaluation) < 0;
+        }
+
+        private int CompareFitness(FitnessEvaluation fitnessEvaluation)
+        {
+            if (fitnessEvaluation.ErrorSum == null)
             {
                 return Int32.MinValue;
             }
 
-            if (double.IsNaN(fitnessEvaluation.SquaredErrorSum.Value))
+            if (_nullResultCount == fitnessEvaluation._nullResultCount)
             {
-                return Int32.MinValue;
+                if (ErrorSum == fitnessEvaluation.ErrorSum)
+                {
+                    return _program.Code.Count.CompareTo(fitnessEvaluation.Program.Code.Count);
+                }
+
+                return ErrorSum.Value.CompareTo(fitnessEvaluation.ErrorSum.Value);
             }
 
-            int sum = WeightedComparison(SquaredErrorSum, fitnessEvaluation.SquaredErrorSum, 10)
+            return _nullResultCount.CompareTo(fitnessEvaluation._nullResultCount);
+
+            /*int sum = WeightedComparison(SquaredErrorSum, fitnessEvaluation.SquaredErrorSum, 10)
                       + WeightedComparison(_tickCount, fitnessEvaluation._tickCount, 5)
                       + WeightedComparison(_nullResultCount, fitnessEvaluation._nullResultCount, 50)
                       + WeightedComparison(_program.Code.Count, fitnessEvaluation.Program.Code.Count, 1);
-            return sum;
+            return sum;*/
+        }
+
+        public bool EqualResults(FitnessEvaluation other)
+        {
+            if (Math.Abs(ErrorSum.Value - other.ErrorSum.Value) > 1e-5m)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < Results.Length; ++i)
+            {
+                if (Math.Abs(Results[i] - other.Results[i]) > 1e-5m * Results.Length)
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
     }
 }

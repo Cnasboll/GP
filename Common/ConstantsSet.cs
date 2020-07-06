@@ -6,17 +6,17 @@ namespace Common
     public class ConstantsSet
     {
         private readonly IConstantsTable<int> _integers;
-        private readonly IConstantsTable<double> _doubles;
+        private readonly IConstantsTable<decimal> _doubles;
         private readonly INormalDistribution _normalDistribution;
 
         public ConstantsSet(INormalDistribution normalDistribution)
         {
             _integers = new ConstantsTable<int>();
-            _doubles = new ConstantsTable<double>();
+            _doubles = new ConstantsTable<decimal>();
             _normalDistribution = normalDistribution;
         }
 
-        public ConstantsSet(IConstantsTable<int> integers, IConstantsTable<double> doubles, INormalDistribution normalDistribution)
+        public ConstantsSet(IConstantsTable<int> integers, IConstantsTable<decimal> doubles, INormalDistribution normalDistribution)
         {
             _integers = integers;
             _doubles = doubles;
@@ -30,7 +30,7 @@ namespace Common
         public ConstantsSet(ConstantsSet constantsSet)
         {
             _integers = new ConstantsTable<int>(constantsSet.Integers);
-            _doubles = new ConstantsTable<double>(constantsSet.Doubles);
+            _doubles = new ConstantsTable<decimal>(constantsSet.Doubles);
             _normalDistribution = (INormalDistribution) constantsSet.NormalDistribution.Clone();
         }
 
@@ -39,7 +39,7 @@ namespace Common
             get { return _integers; }
         }
 
-        public IConstantsTable<double> Doubles
+        public IConstantsTable<decimal> Doubles
         {
             get { return _doubles; }
         }
@@ -102,7 +102,7 @@ namespace Common
 
         static int MutateInteger(Random rd, INormalDistribution normalDistribution, int literal)
         {
-            return (int)Math.Round(literal * normalDistribution.Next(rd, 1.0, 0.25));
+            return (int)Math.Round(literal * normalDistribution.Next(rd, 1.0m, 0.25m));
         }
 
         public int PickDoubleConstant(Random rd)
@@ -110,7 +110,7 @@ namespace Common
             int ix = rd.Next(Doubles.Count + 1);
             if (ix >= Doubles.Count)
             {
-                double constant;
+                decimal constant;
                 do
                 {
                     constant = NextRandomDouble(rd);
@@ -127,7 +127,7 @@ namespace Common
                 return PickDoubleConstant(rd);
             }
             int ix = rd.Next(Doubles.Count);
-            double constant;
+            decimal constant;
             do
             {
                 constant = MutateDouble(rd, NormalDistribution, Doubles[ix]);
@@ -136,18 +136,18 @@ namespace Common
             return ix;
         }
 
-        static double NextRandomDouble(Random rd)
+        static decimal NextRandomDouble(Random rd)
         {
             int integerPart = NextRandomInteger(rd);
             int decimalPart;
             int decimalPartPrecision;
             NextRandomInteger(rd, out decimalPart, out decimalPartPrecision);
-            return integerPart + (Math.Abs(decimalPart) / Math.Pow(10.0, decimalPartPrecision));
+            return new decimal(integerPart + (Math.Abs(decimalPart) / Math.Pow(10.0, decimalPartPrecision)));
         }
 
-        static double MutateDouble(Random rd, INormalDistribution normalDistribution, double constant)
+        static decimal MutateDouble(Random rd, INormalDistribution normalDistribution, decimal constant)
         {
-            return constant * normalDistribution.Next(rd, 1.0, 0.25);
+            return constant * normalDistribution.Next(rd, 1.0m, 0.25m);
         }
 
         public ConstantsSet Merge(ConstantsSet constants, out IList<int> integerRhs2MergedMapping, out IList<int> doubleRhs2MergedMapping)

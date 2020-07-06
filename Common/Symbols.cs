@@ -21,7 +21,7 @@ namespace Common
         Chain,
         If,
         While,
-        // Mov,
+        Mov,
         Ifelse,
         //Terminal symbols that need to be encoded with qualifiers:
         InputArgument,

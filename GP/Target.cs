@@ -2,38 +2,53 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 
 namespace gp
 {
     public class Target : IEnumerable
     {
-        private readonly List<double> _target;
+        private readonly List<decimal> _inputs;
+        private decimal? _expectedResult;
+
+        public decimal? ExpectedResult => _expectedResult;
 
         public static Target Parse(String text)
         {
             var tokens = text.Split(' ');
-            var target = new List<double>();
-            foreach (string token in tokens)
+            var inputs = new List<decimal>();
+            decimal? expectedResult;
+            for (int i = 0; i < tokens.Length-1; ++i)
             {
-                var trimmed = token.Trim();
+                var trimmed = tokens[i].Trim();
                 if (!trimmed.Equals(""))
                 {
-                    target.Add(trimmed == "?"
-                        ? Double.NaN
-                        : Double.Parse(trimmed, CultureInfo.GetCultureInfo("en-GB").NumberFormat));
+                    inputs.Add(decimal.Parse(trimmed, CultureInfo.GetCultureInfo("en-GB").NumberFormat));
                 }
             }
-            return new Target(target);
+
+            var trimmedTargetToken = tokens.Last().Trim();
+            if (trimmedTargetToken == "?")
+            {
+                expectedResult = null;
+            }
+            else
+            {
+                expectedResult = decimal.Parse(trimmedTargetToken, CultureInfo.GetCultureInfo("en-GB").NumberFormat);
+            }
+
+            return new Target(inputs, expectedResult);
         }
 
-        public Target(List<double> target)
+        public Target(List<decimal> inputs, decimal? expectedResult = null)
         {
-            this._target = target;
+            this._inputs = inputs;
+            this._expectedResult = expectedResult;
         }
 
-        public IEnumerator<double> GetEnumerator()
+        public IEnumerator<decimal> GetEnumerator()
         {
-            return this._target.GetEnumerator();
+            return this._inputs.GetEnumerator();
         }
 
         IEnumerator IEnumerable.GetEnumerator()
@@ -42,6 +57,6 @@ namespace gp
         }
 
         // Define the indexer to allow client code to use [] notation.
-        public double this[int i] => this._target[i];
+        public decimal this[int i] => this._inputs[i];
     }
 }

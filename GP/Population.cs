@@ -7,35 +7,28 @@ namespace gp
 {
     public class Population : IList<FitnessEvaluation>
     {
-        #region BestFitnessEvaluationState enum
+        private readonly Problem _problem;
 
-        public enum BestFitnessEvaluationState
-        {
-            WAITING,
-            CALCULATING,  
-            UPDATED
-        } ;
-
-        #endregion
-
-        private readonly object _bestFitnessEvaluationGuard = new object();
-
-        private readonly FitnessEvaluationQueue _fitnessEvaluationQueue;
-        private readonly List<FitnessEvaluation> _population;  
+        private readonly List<FitnessEvaluation> _population;
         private FitnessEvaluation _bestFitnessEvaluation;
-        private BestFitnessEvaluationState _bestFitnessEvaluationState = BestFitnessEvaluationState.WAITING;
-
-        private readonly Thread _printerThread;
+        
         private bool _solved;
 
-        public Population(Random rd, int n, int depth, Problem problem)
+        public Population(Random rd, int depth, Problem problem)
         {
-            _printerThread = new Thread(FitnessPrinter);
-            _printerThread.Start();
-            _fitnessEvaluationQueue = new FitnessEvaluationQueue(OnFitness);
+            _problem = problem;
             _population = new List<FitnessEvaluation>();
-            for (int i = 0; i < n; ++i)
+            int previousPercentage = -1;
+            Console.Out.WriteLine("Creating initial population...");
+            for (int i = 0; !_solved && i < Gp.Popsize; ++i)
             {
+                int percentage = (int) Math.Round(i * 100.0 / Gp.Popsize);
+                if (percentage > previousPercentage)
+                {
+                    previousPercentage = percentage;
+                    Console.Out.WriteLine($"{percentage}%");
+                }
+
                 Add(new FitnessEvaluation(new Program(rd, depth, problem.Varnumber), problem));
             }
         }
@@ -55,7 +48,11 @@ namespace gp
         public void Add(FitnessEvaluation item)
         {
             _population.Add(item);
-            _fitnessEvaluationQueue.Enqueue(item);
+            while (!item.Tick())
+            {
+            }
+
+            OnFitness(item);
         }
 
         public void Clear()
@@ -113,98 +110,77 @@ namespace gp
 
         public void OnFitness(FitnessEvaluation fitnessEvaluation)
         {
-            lock (_bestFitnessEvaluationGuard)
+            if (_bestFitnessEvaluation == null || fitnessEvaluation.BetterThan(_bestFitnessEvaluation))
             {
-                if (_bestFitnessEvaluation == null || fitnessEvaluation.CompareFitness(_bestFitnessEvaluation) < 0)
+                _bestFitnessEvaluation = fitnessEvaluation;
+                Console.WriteLine("Best individual so far: ");
+                _bestFitnessEvaluation.Program.Print();
+                Console.WriteLine("Fitness=" + _bestFitnessEvaluation.ErrorSum);
+
+                _bestFitnessEvaluation.PrintAllResults();
+
+                if (_bestFitnessEvaluation.ErrorSum < 1e-5m)
                 {
-                    if (fitnessEvaluation.SquaredErrorSum != null && !double.IsNaN(fitnessEvaluation.SquaredErrorSum.Value))
-                    {
-                        //Cancel any ongoing canculation
-                        _bestFitnessEvaluation = new FitnessEvaluation(fitnessEvaluation);
-                        _bestFitnessEvaluationState = BestFitnessEvaluationState.UPDATED;
-                        Console.WriteLine("Best fitness so far: {0}", fitnessEvaluation.SquaredErrorSum);
-                        Monitor.Pulse(_bestFitnessEvaluationGuard);
-                    }
+                    Console.Write("PROBLEM SOLVED\n");
+                    _solved = true;
                 }
+
+                Console.WriteLine("Simplified as: ");
+                var simplifiedProgram = AssertSimplification(fitnessEvaluation);
+                simplifiedProgram.Print();
             }
         }
 
-        private void FitnessPrinter()
+        Program AssertSimplification(FitnessEvaluation fitnessEvaluation)
         {
-            FitnessEvaluation fitnessEvaluation = null;
-            while (!Solved)
+            var simplifiedProgram = fitnessEvaluation.Program.Simplify();
+            var simplifiedFitnessEvaluation = new FitnessEvaluation(simplifiedProgram, _problem);
+
+            while (!simplifiedFitnessEvaluation.Tick((false)))
             {
-                lock (_bestFitnessEvaluationGuard)
-                {
-                    if (_bestFitnessEvaluationState == BestFitnessEvaluationState.UPDATED)
-                    {
-                        _bestFitnessEvaluationState = BestFitnessEvaluationState.CALCULATING;
-                        Console.WriteLine("Best individual so far: ");
-                        _bestFitnessEvaluation.Program.Print();
-                        Console.WriteLine("Fitness=" + _bestFitnessEvaluation.SquaredErrorSum);
-                        Console.WriteLine("Simplified as: ");
-                        var simplifiedProgram = _bestFitnessEvaluation.Program.Simplify();
-                        simplifiedProgram.Print();
-                        fitnessEvaluation = new FitnessEvaluation(simplifiedProgram, _bestFitnessEvaluation.Problem);
-                    }
-
-                    if (fitnessEvaluation != null)
-                    {
-                        if (fitnessEvaluation.Tick(true))
-                        {
-                            if (Math.Abs((_bestFitnessEvaluation.SquaredErrorSum ?? 0.0) - (fitnessEvaluation.SquaredErrorSum ?? 0.0)) > 1e-5)
-                            {
-                                Console.WriteLine("Simplification rendered another program: Fitness of simplified program is " +
-                                    fitnessEvaluation.SquaredErrorSum);
-                                Console.WriteLine("Here is a trace of the simplification for debugging:");
-                                _bestFitnessEvaluation.Program.Simplify(_bestFitnessEvaluation);
-                            }
-                            if (_bestFitnessEvaluation.SquaredErrorSum < 1e-5)
-                            {
-                                Console.Write("PROBLEM SOLVED\n");
-                                _solved = true;
-                                return;
-                            }
-                            _bestFitnessEvaluationState = BestFitnessEvaluationState.WAITING;
-                            fitnessEvaluation = null;
-                        }
-
-                        if (_bestFitnessEvaluationState == BestFitnessEvaluationState.UPDATED)
-                        {
-                            continue;
-                        }
-                    }
-                    else
-                    {
-                        Console.WriteLine("Still waiting for a better program...\n");
-                        Monitor.Wait(_bestFitnessEvaluationGuard);
-                    }
-                }
             }
-        }
 
-        bool Solved
-        {
-            get
+
+            if (!fitnessEvaluation.EqualResults(simplifiedFitnessEvaluation))
             {
-                lock (_bestFitnessEvaluationGuard)
+                Console.WriteLine($"Simplification rendered another program: Fitness of original program is {fitnessEvaluation.ErrorSum}\nbut fitness of simplified program is simplified program is  {simplifiedFitnessEvaluation.ErrorSum}");
+                Console.WriteLine("Here is a trace of the simplification for debugging:");
+                _bestFitnessEvaluation.Program.Simplify(_bestFitnessEvaluation);
+
+                simplifiedFitnessEvaluation = new FitnessEvaluation(simplifiedProgram, _problem);
+
+                while (!simplifiedFitnessEvaluation.Tick((true)))
                 {
-                    return _solved;
                 }
+
             }
+
+            return simplifiedProgram;
         }
 
         public void Evolve(Random rd)
         {
-            try
-            {
-                if (!Solved)
-                {
-                    Console.WriteLine("Commencing evolutionary process");
-                }
 
-                while (!Solved)
+            if (!_solved)
+            {
+                Console.WriteLine("Commencing evolutionary process");
+            }
+
+            int generation = 0;
+            while (!_solved)
+            {
+                Console.Out.WriteLine($"Evolving generation {++generation}");
+                int newIndivids = 0;
+                int previousPercentage = -1;
+                while (!_solved && newIndivids < Gp.Popsize)
                 {
+                    int percentage = (int) Math.Round(newIndivids * 100.0 / Gp.Popsize);
+                    if (percentage > previousPercentage)
+                    {
+                        previousPercentage = percentage;
+                        Console.Out.WriteLine($"{percentage}%");
+                    }
+
                     Program newind;
                     if (rd.NextDouble() < Gp._crossoverProb)
                     {
@@ -220,52 +196,59 @@ namespace gp
                     {
                         newind = Tournament(rd, Gp.Tsize).Program.Mutate(rd, Gp._pmutPerNode);
                     }
-                    FitnessEvaluation offspring = NegativeTournament(rd, Gp.Tsize);
-                    lock (offspring)
+
+                    var offspring = new FitnessEvaluation(newind, _problem);
+                    while (!offspring.Tick())
                     {
-                        offspring.Program = newind;
                     }
-                    _fitnessEvaluationQueue.Enqueue(offspring);
+
+                    int index = NegativeTournament(rd, Gp.Tsize, offspring);
+                    this._population[index] = offspring;
+                    OnFitness(offspring);
+                    ++newIndivids;
+
                 }
-            }
-            finally
-            {
-                _fitnessEvaluationQueue.Stop();
             }
         }
 
         public FitnessEvaluation Tournament(Random rd, int tsize)
         {
-            lock (_fitnessEvaluationQueue.TickTournamentLock)
+
+            FitnessEvaluation bestFitness = _population[rd.Next(_population.Count)];
+            for (int i = 0; i < tsize; ++i)
             {
-                FitnessEvaluation bestFitness = _population[rd.Next(_population.Count)];
-                for (int i = 0; i < tsize; ++i)
+                FitnessEvaluation competitor = _population[rd.Next(_population.Count)];
+                if (competitor.BetterThan(bestFitness))
                 {
-                    FitnessEvaluation competitor = _population[rd.Next(_population.Count)];
-                    if (competitor.CompareFitness(bestFitness) < 0)
-                    {
-                        bestFitness = competitor;
-                    }
+                    bestFitness = competitor;
                 }
-                return bestFitness;
             }
+
+            return bestFitness;
         }
 
-        public FitnessEvaluation NegativeTournament(Random rd, int tsize)
+        public int NegativeTournament(Random rd, int tsize, FitnessEvaluation offspring)
         {
-            lock (_fitnessEvaluationQueue.TickTournamentLock)
+            int index = rd.Next(_population.Count);
+            FitnessEvaluation worstFitness = _population[index];
+            bool betterThanOffspring = true;
+            for (int i = 0; i < tsize || (betterThanOffspring && i < tsize * tsize); ++i)
             {
-                FitnessEvaluation worstFitness = _population[rd.Next(_population.Count)];
-                for (int i = 0; i < tsize; ++i)
+                int competitorIndex = rd.Next(_population.Count);
+                FitnessEvaluation competitor = _population[competitorIndex];
+                if (competitor.WorseThan(worstFitness))
                 {
-                    FitnessEvaluation competitor = _population[rd.Next(_population.Count)];
-                    if (competitor.CompareFitness(worstFitness) > 0)
-                    {
-                        worstFitness = competitor;
-                    }
+                    worstFitness = competitor;
+                    index = competitorIndex;
                 }
-                return worstFitness;
+
+                if (competitor.WorseThan(offspring))
+                {
+                    betterThanOffspring = false;
+                }
             }
+
+            return index;
         }
     }
 }

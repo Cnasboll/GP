@@ -4,25 +4,25 @@ using System.Collections.Generic;
 
 namespace gp
 {
-    public class VariableSet : IList<double>
+    public class VariableSet : IList<decimal>
     {
-        private readonly List<double> _variables;
+        private readonly List<decimal> _variables;
         public VariableSet()
         {
-            _variables = new List<double>();
+            _variables = new List<decimal>();
         }
 
         public VariableSet(VariableSet variables)
         {
-            _variables = new List<double>(variables._variables);
+            _variables = new List<decimal>(variables._variables);
         }
 
-        public int IndexOf(double item)
+        public int IndexOf(decimal item)
         {
             return _variables.IndexOf(item);
         }
 
-        public void Insert(int index, double item)
+        public void Insert(int index, decimal item)
         {
             _variables.Insert(index, item);
         }
@@ -32,13 +32,13 @@ namespace gp
             _variables.RemoveAt(index);
         }
 
-        public double this[int x]
+        public decimal this[int x]
         {
             get
             {
                 if (x >= _variables.Count)
                 {                       
-                    return 0.0;
+                    return 0.0m;
                 }
 
                 return _variables[x];
@@ -51,7 +51,7 @@ namespace gp
                 }
                 while (x > _variables.Count)
                 {
-                    _variables.Add(0.0);
+                    _variables.Add(0.0m);
                 }
                 if (x == _variables.Count)
                 {
@@ -64,7 +64,7 @@ namespace gp
             }
         }
 
-        public IEnumerator<double> GetEnumerator()
+        public IEnumerator<decimal> GetEnumerator()
         {
             return _variables.GetEnumerator();
         }
@@ -74,7 +74,7 @@ namespace gp
             return GetEnumerator();
         }
 
-        public void Add(double item)
+        public void Add(decimal item)
         {
             _variables.Add(item);
         }
@@ -84,17 +84,17 @@ namespace gp
             _variables.Clear();
         }
 
-        public bool Contains(double item)
+        public bool Contains(decimal item)
         {
             return _variables.Contains(item);
         }
 
-        public void CopyTo(double[] array, int arrayIndex)
+        public void CopyTo(decimal[] array, int arrayIndex)
         {
             _variables.CopyTo(array, arrayIndex);
         }
 
-        public bool Remove(double item)
+        public bool Remove(decimal item)
         {
             return _variables.Remove(item);
         }

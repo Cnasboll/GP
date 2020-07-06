@@ -16,7 +16,7 @@ namespace Debugger
 
             var fin = new StreamReader(args[0]);
             string code = fin.ReadToEnd();
-            double argument = double.Parse(args[1]);
+            decimal argument = decimal.Parse(args[1]);
 
             CallTree.PrintDebugInfo = true;
 
@@ -25,7 +25,7 @@ namespace Debugger
             RunProgram(code, argument);
         }
 
-        static void RunProgram(string code, double input)
+        static void RunProgram(string code, decimal input)
         {
             var program = Parser.Parser.Parse(Tokenizer.Tokenizer.Tokenize(code));
 

@@ -33,7 +33,7 @@ namespace SimplyfyingTest
 
                 }
                 program = simplifiedProgram;
-            } while (fitness.SquaredErrorSum == simplifiedFitness.SquaredErrorSum);
+            } while (fitness.ErrorSum == simplifiedFitness.ErrorSum);
         }
     }
 }

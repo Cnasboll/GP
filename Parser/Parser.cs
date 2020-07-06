@@ -125,7 +125,7 @@ namespace Parser
                 case Token.EConstantTypes.IntegerConstant:
                     return new ParseTree(Symbols.IntegerLiteral, _constantsSet.Integers.Include(int.Parse(_tokenEnumerator.Current.Lexeme)));
                 case Token.EConstantTypes.FloatConstant:
-                    return new ParseTree(Symbols.DoubleLiteral, _constantsSet.Doubles.Include(double.Parse(_tokenEnumerator.Current.Lexeme, CultureInfo.GetCultureInfo("en-GB").NumberFormat)));
+                    return new ParseTree(Symbols.DoubleLiteral, _constantsSet.Doubles.Include(decimal.Parse(_tokenEnumerator.Current.Lexeme, CultureInfo.GetCultureInfo("en-GB").NumberFormat)));
                     
             }
             throw new ParseException(string.Format("Unexpected token {0} when expecting operand.", _tokenEnumerator.Current.Lexeme));

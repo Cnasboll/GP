@@ -7,7 +7,7 @@ namespace gp
     {
         public const int Depth = 5;
         public const int Popsize = 100000;
-        public const int Tsize = 10;
+        public const int Tsize = 2;
 
         public static readonly double
             _crossoverProb = 0.9;
@@ -22,7 +22,7 @@ namespace gp
                 var problem = Problem.Read(args[0]);
 
                 var rd = new Random();
-                var pop = new Population(rd, Popsize, Depth, problem);
+                var pop = new Population(rd, Depth, problem);
                 pop.Evolve(rd);
             }
             catch (FileNotFoundException)

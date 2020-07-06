@@ -146,15 +146,35 @@ namespace gp
             }
         }
 
+        int FindRelativelyShortSubTree(Random rd, int len, out int endOfNode, int iterations = 3)
+        {
+            int node = rd.Next(len);
+            endOfNode = Traverse(node);
+            int nodeLen = (endOfNode - node) + 1;
+            for (int i = 1; i < iterations; ++i)
+            {
+                int node2 = rd.Next(len);
+                int endOfNode2 = Traverse(node2);
+
+                int nodeLen2 = (endOfNode2 - node2) + 1;
+
+                if (nodeLen2 < nodeLen)
+                {
+                    node = node2;
+                    endOfNode = endOfNode2;
+                    nodeLen = nodeLen2;
+                }
+            }
+
+            return node;
+        }
+
         public Program Crossover(Random rd, Program parent)
         {
             int len = Traverse(0);
             int parentLen = parent.Traverse(0);
-            int nodeToRemove = rd.Next(len);
-            int endOfNodeToRemove = Traverse(nodeToRemove);
-
-            int nodeToInsert = rd.Next(parentLen);
-            int endOfNodeToInsert = parent.Traverse(nodeToInsert);
+            int nodeToRemove = FindRelativelyShortSubTree(rd, len, out int endOfNodeToRemove);
+            int nodeToInsert = parent.FindRelativelyShortSubTree(rd, parentLen, out int endOfNodeToInsert);
 
             var childCode = new List<int>(len + nodeToRemove - endOfNodeToRemove + endOfNodeToInsert - nodeToInsert);
             IList<int> integerRhs2MergedMapping;
@@ -257,169 +277,199 @@ namespace gp
 
         public Program Mutate(Random rd, double pmut)
         {
-            if (rd.NextDouble() < pmut)
-            {
-                //Subtree replacement is implemented through crossover with a new randomly generated program
-                return Crossover(rd,
-                                 new Program(rd, Gp.Depth, _varnumber, new ConstantsSet(_constantsSet),
-                                             WorkingVariablesCount));
-            }
-
-            if (rd.NextDouble() < pmut)
-            {
-                //Simplify this program as efficient as possible
-                return Simplify();
-            }
-
-            var mutatedProgram = new Program(this);
-            int len = mutatedProgram.Traverse(0);
-
-            for (int i = 0; i < len; ++i)
+            bool mutated = false;
+            Program mutatedProgram = this;
+            int len = Traverse(0);
+            while (!mutated)
             {
                 if (rd.NextDouble() < pmut)
                 {
-                    Symbols symbol;
-                    int qualifier;
-                    DecodeSymbol(Varnumber, mutatedProgram.Code[i], out symbol, out qualifier);
-                    if (symbol == Symbols.IntegerLiteral)
-                    {
-                        if (rd.NextDouble() < pmut)
-                        {
-                            //It is a constant. We choose to adjust the constant value slightly.
-                            //Code remains unchanged.
-                            mutatedProgram.Constants.MutateIntegerConstant(rd, qualifier);
-                            continue;
-                        }
-                    }
-                    else if (symbol == Symbols.DoubleLiteral)
-                    {
-                        if (rd.NextDouble() < pmut)
-                        {
-                            //It is a constant. We choose to adjust the constant value slightly.
-                            //Code remains unchanged.
-                            mutatedProgram.Constants.MutateDoubleConstant(rd, qualifier);
-                            continue;
-                        }
-                    }
+                    //Subtree replacement is implemented through crossover with a new randomly generated program
+                    return Crossover(rd,
+                        new Program(rd, Gp.Depth, _varnumber, new ConstantsSet(_constantsSet),
+                            WorkingVariablesCount));
+                }
 
-                    int arity = GetSyntacticArity(symbol);
+                /*if (rd.NextDouble() < pmut)
+                {
+                    //Simplify this program as efficient as possible
+                    return Simplify();
+                }*/
 
+                mutatedProgram = new Program(this);
+                //len = mutatedProgram.Traverse(0);
 
-                    if (arity > 0)
-                    {
-                        if (rd.NextDouble() < pmut)
-                        {
-                            //Replace this node with one of it's children (or a new constant if possible)
-                            mutatedProgram.ReplaceNodeWithChild(rd, i);
-                            //Determine the new legth
-                            len = mutatedProgram.Traverse(0);
-                            continue;
-                        }
-
-                        if (rd.NextDouble() < pmut)
-                        {
-                            mutatedProgram.ReshuffleChildren(rd, i);
-                            continue;
-                        }
-                    }
-
+                for (int i = 0; i < len; ++i)
+                {
                     if (rd.NextDouble() < pmut)
                     {
-                        //Simplifies the expression at the given node.
-                        Program simplifiedProgram = mutatedProgram.SimplifyNode(i);
-                        if (simplifiedProgram != null)
+                        Symbols symbol;
+                        int qualifier;
+                        DecodeSymbol(Varnumber, mutatedProgram.Code[i], out symbol, out qualifier);
+                        if (symbol == Symbols.IntegerLiteral)
                         {
-                            return simplifiedProgram;
-                        }
-                    }
-
-                    Symbols newSymbol = PickRandomSymbol(rd);
-
-                    int? newQualifier = null;
-
-                    if (NeedsQualifier(newSymbol))
-                    {
-                        switch (newSymbol)
-                        {
-                                //Select an input argument
-                            case Symbols.InputArgument:
-                                newQualifier = rd.Next(mutatedProgram.Varnumber);
-                                break;
-                            case Symbols.IntegerLiteral:
-                                newQualifier = mutatedProgram.Constants.PickIntegerConstant(rd);
-                                break;
-                            case Symbols.DoubleLiteral:
-                                newQualifier = mutatedProgram.Constants.PickDoubleConstant(rd);
-                                break;
-                            case Symbols.WorkingVariable:
-                                {
-                                    newQualifier = rd.Next(mutatedProgram.WorkingVariablesCount + 1);
-                                    if (newQualifier >= mutatedProgram.WorkingVariablesCount)
-                                    {
-                                        ++mutatedProgram.WorkingVariablesCount;
-                                    }
-                                }
-                                break;
-                            case Symbols.AssignWorkingVariable:
-                                {
-                                    newQualifier = rd.Next(mutatedProgram.WorkingVariablesCount + 1);
-                                    if (newQualifier >= mutatedProgram.WorkingVariablesCount)
-                                    {
-                                        ++mutatedProgram.WorkingVariablesCount;
-                                    }
-                                }
-                                break;
-                        }
-                    }
-
-                    int newArity = GetSyntacticArity(newSymbol);
-
-                    if (newArity != arity)
-                    {
-                        ///Our new symbol has a different arity so we need to remove or squeeze in some new children
-                        IList<IList<int>> children;
-                        int maximumDepth;
-                        //First we analyse this node's children.
-                        int childEnd = mutatedProgram.TraverseChildren(i, out children, out maximumDepth);
-                        //Then we remove them from the code.
-                        mutatedProgram.Code.RemoveRange(i + 1, childEnd - (i + 1));
-                        while (children.Count < newArity)
-                        {
-                            //Our new symbol has a higher arity: grow some random nodes but limit them to the depth
-                            //our node already has. Insert them at random locations between the existing children.
-                            children.Insert(rd.Next(children.Count + 1),
-                                            new List<int>(mutatedProgram.Grow(rd, maximumDepth)));
-                        }
-                        while (children.Count > newArity)
-                        {
-                            //Our new symbol has a lower arity: As long as we stll have too many children remove one at random.
-                            children.RemoveAt(rd.Next(children.Count));
-                        }
-                        //Then we put the new and the old children back in the code.
-                        int k = i;
-                        foreach (var child in children)
-                        {
-                            foreach (int token in child)
+                            if (rd.NextDouble() < pmut)
                             {
-                                mutatedProgram.Code.Insert(++k, token);
+                                //It is a constant. We choose to adjust the constant value slightly.
+                                //Code remains unchanged.
+                                mutatedProgram.Constants.MutateIntegerConstant(rd, qualifier);
+                                mutated = true;
+                                continue;
                             }
                         }
-                        //And then we trim it up.
-                        mutatedProgram.Code.TrimExcess();
-                    }
+                        else if (symbol == Symbols.DoubleLiteral)
+                        {
+                            if (rd.NextDouble() < pmut)
+                            {
+                                //It is a constant. We choose to adjust the constant value slightly.
+                                //Code remains unchanged.
+                                mutatedProgram.Constants.MutateDoubleConstant(rd, qualifier);
+                                mutated = true;
+                                continue;
+                            }
+                        }
 
-                    mutatedProgram.Code[i] = Codec.EncodeSymbol(Varnumber, newSymbol, newQualifier);
+                        int arity = GetSyntacticArity(symbol);
 
-                    if (newArity != arity)
-                    {
-                        //Determine the new legth
-                        len = mutatedProgram.Traverse(0);
+
+                        if (arity > 0)
+                        {
+                            if (rd.NextDouble() < pmut)
+                            {
+                                //Replace this node with one of it's children (or a new constant if possible)
+                                mutatedProgram.ReplaceNodeWithChild(rd, i);
+                                //Determine the new length
+                                len = mutatedProgram.Traverse(0);
+                                mutated = true;
+                                continue;
+                            }
+
+                            if (rd.NextDouble() < pmut)
+                            {
+                                mutatedProgram.ReshuffleChildren(rd, i);
+                                mutated = true;
+                                continue;
+                            }
+                        }
+
+                        /*if (rd.NextDouble() < pmut)
+                        {
+                            //Simplifies the expression at the given node.
+                            Program simplifiedProgram = mutatedProgram.SimplifyNode(i);
+                            if (simplifiedProgram != null)
+                            {
+                                return simplifiedProgram;
+                            }
+                        }*/
+
+                        if (rd.NextDouble() < pmut)
+                        {
+                            len = ReplaceSymbol(rd, symbol, mutatedProgram, arity, i, len);
+
+                            mutated = true;
+                        }
                     }
                 }
             }
+
             //For testing:
             mutatedProgram.Traverse(0);
             return mutatedProgram;
+        }
+
+        private int ReplaceSymbol(Random rd, Symbols currentSymbol, Program mutatedProgram, int arity, int i, int len)
+        {
+            Symbols newSymbol = currentSymbol;
+            while (newSymbol == currentSymbol)
+            {
+                newSymbol = PickRandomSymbol(rd);
+            }
+
+            int? newQualifier = null;
+
+            if (NeedsQualifier(newSymbol))
+            {
+                switch (newSymbol)
+                {
+                    //Select an input argument
+                    case Symbols.InputArgument:
+                        newQualifier = rd.Next(mutatedProgram.Varnumber);
+                        break;
+                    case Symbols.IntegerLiteral:
+                        newQualifier = mutatedProgram.Constants.PickIntegerConstant(rd);
+                        break;
+                    case Symbols.DoubleLiteral:
+                        newQualifier = mutatedProgram.Constants.PickDoubleConstant(rd);
+                        break;
+                    case Symbols.WorkingVariable:
+                    {
+                        newQualifier = rd.Next(mutatedProgram.WorkingVariablesCount + 1);
+                        if (newQualifier >= mutatedProgram.WorkingVariablesCount)
+                        {
+                            ++mutatedProgram.WorkingVariablesCount;
+                        }
+
+                        break;
+                    }
+                    case Symbols.AssignWorkingVariable:
+                    {
+                        newQualifier = rd.Next(mutatedProgram.WorkingVariablesCount + 1);
+                        if (newQualifier >= mutatedProgram.WorkingVariablesCount)
+                        {
+                            ++mutatedProgram.WorkingVariablesCount;
+                        }
+
+                        break;
+                    }
+                }
+            }
+
+            int newArity = GetSyntacticArity(newSymbol);
+
+            if (newArity != arity)
+            {
+                // Our new symbol has a different arity so we need to remove or squeeze in some new children
+                //First we analyse this node's children.
+                int childEnd = mutatedProgram.TraverseChildren(i, out IList<IList<int>> children, out var maximumDepth);
+                //Then we remove them from the code.
+                mutatedProgram.Code.RemoveRange(i + 1, childEnd - (i + 1));
+                while (children.Count < newArity)
+                {
+                    //Our new symbol has a higher arity: grow some random nodes but limit them to the depth
+                    //our node already has. Insert them at random locations between the existing children.
+                    children.Insert(rd.Next(children.Count + 1),
+                        new List<int>(mutatedProgram.Grow(rd, maximumDepth)));
+                }
+
+                while (children.Count > newArity)
+                {
+                    //Our new symbol has a lower arity: As long as we still have too many children remove one at random.
+                    children.RemoveAt(rd.Next(children.Count));
+                }
+
+                //Then we put the new and the old children back in the code.
+                int k = i;
+                foreach (var child in children)
+                {
+                    foreach (int token in child)
+                    {
+                        mutatedProgram.Code.Insert(++k, token);
+                    }
+                }
+
+                //And then we trim it up.
+                mutatedProgram.Code.TrimExcess();
+            }
+
+            mutatedProgram.Code[i] = Codec.EncodeSymbol(Varnumber, newSymbol, newQualifier);
+
+            if (newArity != arity)
+            {
+                //Determine the new length
+                len = mutatedProgram.Traverse(0);
+            }
+
+            return len;
         }
 
         private void ReshuffleChildren(Random rd, int ix)
@@ -527,11 +577,18 @@ namespace gp
         public override string ToString()
         {
             var stringBuilder = new StringBuilder();
-            Print(0, stringBuilder);
+            Print(0, stringBuilder, false);
             return stringBuilder.ToString();
         }
 
-        private int Print(int pc, StringBuilder stringBuilder)
+        public string ToCSharp()
+        {
+            var stringBuilder = new StringBuilder();
+            Print(0, stringBuilder, true);
+            return stringBuilder.ToString();
+        }
+
+        private int Print(int pc, StringBuilder stringBuilder, bool appendMToDecimals)
         {
             Symbols symbol;
             int qualifier;
@@ -555,7 +612,7 @@ namespace gp
                             break;
                     }
 
-                    pc = Print(pc, stringBuilder);
+                    pc = Print(pc, stringBuilder, appendMToDecimals);
                 }
             }
 
@@ -569,6 +626,11 @@ namespace gp
                     break;
                 case Symbols.DoubleLiteral:
                     stringBuilder.Append(Constants.Doubles[qualifier].ToString(CultureInfo.GetCultureInfo("en-GB").NumberFormat));
+                    if (appendMToDecimals)
+                    {
+                        stringBuilder.Append("m");
+                    }
+
                     break;
                 case Symbols.WorkingVariable:
                     stringBuilder.Append(string.Format("Y{0}", qualifier));
@@ -585,16 +647,16 @@ namespace gp
                 case Symbols.While:
                     stringBuilder.Append(" DO ");
                     break;
-                    /*case Gp.Symbols.Mov:
+                case Symbols.Mov:
                     stringBuilder.Append("X[");
-                    pc = Print(program, pc);
+                    pc = Print(pc, stringBuilder, appendMToDecimals);
                     stringBuilder.Append("]:=");
-                    return Print(program, pc);*/
+                    return Print(pc, stringBuilder, appendMToDecimals);
                 case Symbols.Ifelse:
                     stringBuilder.Append("IF ");
-                    pc = Print(pc, stringBuilder);
+                    pc = Print(pc, stringBuilder, appendMToDecimals);
                     stringBuilder.Append(" THEN ");
-                    pc = Print(pc, stringBuilder);
+                    pc = Print(pc, stringBuilder, appendMToDecimals);
                     stringBuilder.Append(" ELSE ");
                     break;
                 case Symbols.Add:
@@ -646,7 +708,7 @@ namespace gp
 
             if (arity > 0)
             {
-                pc = Print(pc, stringBuilder);
+                pc = Print(pc, stringBuilder, appendMToDecimals);
                 //Was not a leaf
                 stringBuilder.Append(")");
             }
@@ -673,7 +735,21 @@ namespace gp
         //Simplify the language
         private static HashSet<Symbols> bannedSymbols = new HashSet<Symbols>
         {
+            Symbols.Not,
+            Symbols.Lt,
+            Symbols.Lteq,
+            Symbols.Gt,
+            Symbols.Gteq,
+            Symbols.Eq,
+            Symbols.Neq,
+            Symbols.And,
+            Symbols.Or,
+            Symbols.Xor,
+            Symbols.Chain,
+            Symbols.If,
             Symbols.While,
+            Symbols.Mov,
+            Symbols.Ifelse,
             Symbols.WorkingVariable,
             Symbols.AssignWorkingVariable,
         }; 

@@ -77,7 +77,6 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <None Include="app.config" />
     <None Include="Programs\o2.program">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

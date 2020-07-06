@@ -4,6 +4,6 @@ namespace Common
 {
     public interface INormalDistribution : ICloneable
     {
-        double Next(Random rand, double mean, double stdDev);
+        decimal Next(Random rand, decimal mean, decimal stdDev);
     }
 }

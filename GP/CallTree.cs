@@ -7,11 +7,8 @@ namespace gp
 {
     public class CallTree
     {
-        private const PossibleSign AllFiniteSigns =
+        private const PossibleSign AllSigns =
             PossibleSign.Positive | PossibleSign.Negative | PossibleSign.Zero;
-
-        private const PossibleSign AllInfiniteSigns =
-            PossibleSign.NaN | PossibleSign.PositiveInfinity | PossibleSign.NegativeInfinity;
 
         private const PossibleSign BooleanSigns = PossibleSign.Positive | PossibleSign.Zero;
 
@@ -24,7 +21,7 @@ namespace gp
         private int _conditionalChildrenIndex;
         private int _preEvaluatedArgIndex;
 
-        private double _result = Double.NaN;
+        private decimal _result = 0;
         private bool _evaluated = false;
         private PossibleSign _sign;
 
@@ -106,21 +103,18 @@ namespace gp
 
         public bool Evaluated => this._evaluated;
 
-        public double Result
-        {
-            get => _result;
-        }
+        public decimal Result => _result;
 
         public bool Bresult
         {
-            get { return _result != 0.0; }
-            set { _result = value ? 1.0 : 0.0; }
+            get => IResult != 0;
+            set => IResult = value ? 1 : 0;
         }
 
         public int IResult
         {
-            get { return (int) _result; }
-            set { _result = value; }
+            get => (int) _result;
+            set => _result = value;
         }
 
         public bool IsConstant
@@ -146,6 +140,8 @@ namespace gp
                 switch (_symbol)
                 {
                     case Symbols.AssignWorkingVariable:
+                        return true;
+                    case Symbols.Mov:
                         return true;
                     default:
                         {
@@ -301,15 +297,7 @@ namespace gp
             }
         }
 
-        private bool LacksSideEffects
-        {
-            get { return IsConstant || (!HasAssignment && !HasWhileLoop); }
-        }
-
-        protected bool NanResultPossible
-        {
-            get { return SignPossible(Sign, PossibleSign.NaN); }
-        }
+        private bool LacksSideEffects => IsConstant || (!HasAssignment && !HasWhileLoop);
 
         private CallTree Operand
         {
@@ -461,32 +449,11 @@ namespace gp
             }
         }
 
-        private bool IsPositive
-        {
-            get
-            {
-                return
-                    !SignPossible(Sign,
-                                  PossibleSign.Zero | PossibleSign.Negative | PossibleSign.NegativeInfinity |
-                                  PossibleSign.NaN);
-            }
-        }
+        private bool IsPositive => !SignPossible(Sign, PossibleSign.Zero | PossibleSign.Negative);
 
-        private bool IsNegative
-        {
-            get
-            {
-                return
-                    !SignPossible(Sign,
-                                  PossibleSign.Zero | PossibleSign.Positive | PossibleSign.PositiveInfinity |
-                                  PossibleSign.NaN);
-            }
-        }
+        private bool IsNegative => !SignPossible(Sign, PossibleSign.Zero | PossibleSign.Positive);
 
-        private bool IsZero
-        {
-            get { return Sign == PossibleSign.Zero; }
-        }
+        private bool IsZero => Sign == PossibleSign.Zero;
 
         private bool IsArithmeticExpression
         {
@@ -504,15 +471,7 @@ namespace gp
             }
         }
 
-        private bool ResultIsFinite
-        {
-            get { return !SignPossible(Sign, AllInfiniteSigns); }
-        }
-
-        private bool ResultIsNeverZero
-        {
-            get { return !SignPossible(Sign, PossibleSign.Zero); }
-        }
+        private bool ResultIsNeverZero => !SignPossible(Sign, PossibleSign.Zero);
 
 
         private static bool SignPossible(PossibleSign possibleSigns, PossibleSign test)
@@ -547,31 +506,19 @@ namespace gp
             if (IsConstant)
             {
                 //For constant expressions we can always determine sign
-                if (Double.IsNaN(Result))
-                {
-                    return PossibleSign.NaN;
-                }
-                if (Double.IsNegativeInfinity(Result))
-                {
-                    return PossibleSign.NegativeInfinity;
-                }
-                if (Double.IsPositiveInfinity(Result))
-                {
-                    return PossibleSign.PositiveInfinity;
-                }
-                if (Result < 0.0)
+                if (Result < 0.0m)
                 {
                     return PossibleSign.Negative;
                 }
-                if (Result > 0.0)
+                if (Result > 0.0m)
                 {
                     return PossibleSign.Positive;
                 }
                 return PossibleSign.Zero;
             }
 
-            //For boolean arguments we do not need to analyse the arguments: Sign is 0 or 1.
-            //If we can rule out either we have proven the whole argument is a constant and the simplifcation
+            //For boolean arguments we do not need to analyze the arguments: Sign is 0 or 1.
+            //If we can rule out either we have proven the whole argument is a constant and the simplification
             //rules will have replaced by such!
             if (IsBoolean)
             {
@@ -580,60 +527,61 @@ namespace gp
 
             switch (_symbol)
             {
-                    //An input argument or working variable can be zero, negative or positive
+                //An input argument or working variable can be zero, negative or positive
                 case Symbols.InputArgument:
                 case Symbols.WorkingVariable:
-                    return AllFiniteSigns;
+                    return AllSigns;
 
-                    //The assignment has the sign of the operand, so for the chain
+                //The assignment has the sign of the operand, so for the move and chain
                 case Symbols.AssignWorkingVariable:
                     return Operand.Sign;
+                case Symbols.Mov:
                 case Symbols.Chain:
                     return Rhs.Sign;
 
-                    //An if-then-else has the same sign that both branches have
+                //An if-then-else has the same sign that both branches have
                 case Symbols.Ifelse:
                     return _conditionalChildren[0].Sign | _conditionalChildren[1].Sign;
-                    //An if statement and a while loop either has the sign of the body (if guard is true), or NaN (if guard is false) 
+                //An if statement and a while loop either has the sign of the body (if guard is true), or Zero (if guard is false) 
                 case Symbols.If:
                     {
+                        // If the guard expression is false, if-then evaluates to zero.
+                        PossibleSign possibleSigns = PossibleSign.Zero;
+
                         if ((_preEvaluatedArgs[0]._symbol == Symbols.Not &&
                              _preEvaluatedArgs[0].Operand.Equals(_conditionalChildren[0]))
                             ||
                             (_conditionalChildren[0]._symbol == Symbols.Not &&
                              _conditionalChildren[0].Operand.Equals(_preEvaluatedArgs[0])))
                         {
-                            //If not term then term can be either zero or NaN.
-                            return PossibleSign.NaN | PossibleSign.Zero;
+                            //If not X then X [else 0] => 0
+                            //If x THEN not X [else 0] => 0
+                            return possibleSigns;
                         }
 
-                        PossibleSign possibleSigns = _conditionalChildren[0].Sign | PossibleSign.NaN;
-                        if (_preEvaluatedArgs[0].Equals(_conditionalChildren[0]))
-                        {
-                            //If term then term can never be zero because if term is zero the result is NaN.
-                            possibleSigns = possibleSigns ^ PossibleSign.Zero;
-                        }
+                        possibleSigns |= _conditionalChildren[0].Sign;
                         return possibleSigns;
                     }
                 case Symbols.While:
-                    return _conditionalChildren[1].Sign | PossibleSign.NaN;
+                    return _conditionalChildren[0].Sign | PossibleSign.Zero;
                 case Symbols.Add:
                     {
                         PossibleSign lhsPossibleSign = Lhs.Sign;
                         PossibleSign rhsPossibleSign = Rhs.Sign;
 
                         PossibleSign possibleSigns = 0;
-                        if (SignsPossible(lhsPossibleSign, PossibleSign.Positive, rhsPossibleSign, PossibleSign.Positive))
+                        if (SignsPossible(lhsPossibleSign, PossibleSign.Positive, 
+                            rhsPossibleSign, PossibleSign.Positive))
                         {
                             //Adding two positive numbers always lead to a positive number
                             possibleSigns |= PossibleSign.Positive;
                         }
 
-                        if (CommutativeSignsPossible(lhsPossibleSign, PossibleSign.Negative, rhsPossibleSign,
-                                                     PossibleSign.Positive))
+                        if (CommutativeSignsPossible(lhsPossibleSign, PossibleSign.Negative, 
+                            rhsPossibleSign, PossibleSign.Positive))
                         {
                             //Adding a negative and a positive number leads to any finite value.
-                            possibleSigns |= AllFiniteSigns;
+                            possibleSigns |= AllSigns;
                         }
 
                         if (SignPossible(lhsPossibleSign, PossibleSign.Zero))
@@ -648,35 +596,6 @@ namespace gp
                             possibleSigns |= lhsPossibleSign;
                         }
 
-                        if (CommutativeSignsPossible(lhsPossibleSign, PossibleSign.NegativeInfinity, rhsPossibleSign,
-                                                     PossibleSign.PositiveInfinity))
-                        {
-                            //If one side is NegativeInfinity but the other is PositiveInfinity the result will be NaN
-                            //Assert.IsTrue(Double.IsNaN(Double.PositiveInfinity + Double.NegativeInfinity));
-                            possibleSigns |= PossibleSign.NaN;
-                        }
-
-                        if (CommutativeSignsPossible(lhsPossibleSign, PossibleSign.NegativeInfinity, rhsPossibleSign,
-                                                     AllFiniteSigns | PossibleSign.NegativeInfinity))
-                        {
-                            //If one side is NegativeInfinity but the other is finite or also negative infinity, then result will be NegativeInfinity
-                            // Assert.IsTrue(Double.IsNegativeInfinity(Double.NegativeInfinity + Double.NegativeInfinity));
-                            // Assert.IsTrue(Double.IsNegativeInfinity(Double.NegativeInfinity + 1.0));
-                            possibleSigns |= PossibleSign.NegativeInfinity;
-                        }
-
-                        if (CommutativeSignsPossible(lhsPossibleSign, PossibleSign.PositiveInfinity, rhsPossibleSign,
-                                                     AllFiniteSigns | PossibleSign.PositiveInfinity))
-                        {
-                            //If one side is PositiveInfinity but the other is finite or also positive infiity, then result will be PositiveInfinity
-                            // Assert.IsTrue(Double.IsPositiveInfinity(Double.PositiveInfinity + Double.PositiveInfinity));
-                            // Assert.IsTrue(Double.IsPositiveInfinity(Double.PositiveInfinity + 1.0));
-                            possibleSigns |= PossibleSign.PositiveInfinity;
-                        }
-
-                        //If either sign is NaN the result will be NaN.
-                        possibleSigns |= (lhsPossibleSign & PossibleSign.NaN);
-                        possibleSigns |= (rhsPossibleSign & PossibleSign.NaN);
                         return possibleSigns;
                     }
                 case Symbols.Sub:
@@ -685,35 +604,39 @@ namespace gp
                         PossibleSign rhsPossibleSign = Rhs.Sign;
 
                         PossibleSign possibleSigns = 0;
-                        if (SignsPossible(lhsPossibleSign, PossibleSign.Positive, rhsPossibleSign, PossibleSign.Positive))
+                        if (SignsPossible(lhsPossibleSign, PossibleSign.Positive, 
+                            rhsPossibleSign, PossibleSign.Positive))
                         {
-                            //Subtracting a positive number from another postive number leads to any finite value.
-                            possibleSigns |= AllFiniteSigns;
+                            //Subtracting a positive number from another positive number leads to any finite value.
+                            possibleSigns |= AllSigns;
                         }
 
-                        if (SignsPossible(lhsPossibleSign, PossibleSign.Zero | PossibleSign.Negative, rhsPossibleSign,
-                                          PossibleSign.Positive))
+                        if (SignsPossible(lhsPossibleSign, PossibleSign.Zero | PossibleSign.Negative,
+                            rhsPossibleSign, PossibleSign.Positive))
                         {
-                            //Subtracting a positive number from a non-postive number leads to a negative value.
+                            //Subtracting a positive number from a non-positive number leads to a negative value.
                             possibleSigns |= PossibleSign.Negative;
                         }
 
-                        if (SignsPossible(lhsPossibleSign, PossibleSign.Positive, rhsPossibleSign, PossibleSign.Negative))
+                        if (SignsPossible(lhsPossibleSign, PossibleSign.Positive, 
+                            rhsPossibleSign, PossibleSign.Negative))
                         {
                             //The difference between a positive number and a negative number is always positive
                             possibleSigns |= PossibleSign.Positive;
                         }
 
-                        if (SignsPossible(lhsPossibleSign, PossibleSign.Zero, rhsPossibleSign, PossibleSign.Negative))
+                        if (SignsPossible(lhsPossibleSign, PossibleSign.Zero, 
+                            rhsPossibleSign, PossibleSign.Negative))
                         {
-                            //Subtracting a negative number from zero leads to a possible value.
+                            //Subtracting a negative number from zero leads to a positive value.
                             possibleSigns |= PossibleSign.Negative;
                         }
 
-                        if (SignsPossible(lhsPossibleSign, PossibleSign.Negative, rhsPossibleSign, PossibleSign.Negative))
+                        if (SignsPossible(lhsPossibleSign, PossibleSign.Negative, 
+                            rhsPossibleSign, PossibleSign.Negative))
                         {
                             //Subtracting a negative number from a negative number leads to any finite value.
-                            possibleSigns |= AllFiniteSigns;
+                            possibleSigns |= AllSigns;
                         }
 
                         if (SignPossible(rhsPossibleSign, PossibleSign.Zero))
@@ -721,44 +644,6 @@ namespace gp
                             //Subtracting zero will keep the sign of lhs
                             possibleSigns |= lhsPossibleSign;
                         }
-
-                        if (SignsPossible(lhsPossibleSign, PossibleSign.NegativeInfinity, rhsPossibleSign,
-                                          PossibleSign.NegativeInfinity)
-                            ||
-                            SignsPossible(lhsPossibleSign, PossibleSign.PositiveInfinity, rhsPossibleSign,
-                                          PossibleSign.PositiveInfinity))
-                        {
-                            //Subtracting Negative infinity from Negative infinity or Positive ifinity from Positive infinity both lead to NaN
-                            //Assert.IsTrue(Double.IsNaN(Double.NegativeInfinity - Double.NegativeInfinity));
-                            //Assert.IsTrue(Double.IsNaN(Double.PositiveInfinity - Double.PositiveInfinity));
-                            possibleSigns |= PossibleSign.NaN;
-                        }
-
-                        if (SignsPossible(lhsPossibleSign, PossibleSign.NegativeInfinity, rhsPossibleSign,
-                                          PossibleSign.PositiveInfinity))
-                        {
-                            //Subtracting Positive infinity from Negative infinity leads to Negative infinity
-                            //Assert.IsTrue(Double.IsPositiveInfinity(Double.PositiveInfinity - Double.NegativeInfinity));
-                            possibleSigns |= PossibleSign.NegativeInfinity;
-                        }
-
-                        if (CommutativeSignsPossible(lhsPossibleSign, PossibleSign.NegativeInfinity, rhsPossibleSign,
-                                                     AllFiniteSigns))
-                        {
-                            //If one side is NegativeInfinity but the other is finite, then result will be NegativeInfinity
-                            possibleSigns |= PossibleSign.NegativeInfinity;
-                        }
-
-                        if (CommutativeSignsPossible(lhsPossibleSign, PossibleSign.PositiveInfinity, rhsPossibleSign,
-                                                     AllFiniteSigns))
-                        {
-                            //If one side is PositiveInfinity but the other is finite, then result will be PositiveInfinity
-                            possibleSigns |= PossibleSign.PositiveInfinity;
-                        }
-
-                        //If either sign is NaN the result will be NaN.
-                        possibleSigns |= (lhsPossibleSign & PossibleSign.NaN);
-                        possibleSigns |= (rhsPossibleSign & PossibleSign.NaN);
 
                         return possibleSigns;
                     }
@@ -768,74 +653,17 @@ namespace gp
                         PossibleSign rhsPossibleSign = Rhs.Sign;
 
                         PossibleSign possibleSigns = 0;
-                        if (SignsPossible(lhsPossibleSign, PossibleSign.Zero, rhsPossibleSign, PossibleSign.Zero))
+
+                        if (SignPossible(rhsPossibleSign, PossibleSign.Zero))
                         {
-                            //If both the denominator and the divisor is Zero then the result is NaN
-                            possibleSigns |= PossibleSign.NaN;
+                            // Division by zero is treated as division by one: Keeps sign of lhs
+                            possibleSigns |= lhsPossibleSign;
                         }
 
-                        if (
-                            SignPossible(lhsPossibleSign, PossibleSign.PositiveInfinity | PossibleSign.NegativeInfinity) &&
-                            SignPossible(rhsPossibleSign, PossibleSign.PositiveInfinity | PossibleSign.NegativeInfinity))
+                        if (CommutativeSignsPossible(lhsPossibleSign, PossibleSign.Positive, 
+                            rhsPossibleSign, PossibleSign.Negative))
                         {
-                            //If the denominator AND the divisor are both infinity of any sign, result is NaN
-
-                            //Assert.IsTrue(Double.IsNaN(Double.PositiveInfinity / Double.PositiveInfinity));
-                            //Assert.IsTrue(Double.IsNaN(Double.PositiveInfinity / Double.NegativeInfinity));
-                            //Assert.IsTrue(Double.IsNaN(Double.NegativeInfinity / Double.PositiveInfinity));
-                            //Assert.IsTrue(Double.IsNaN(Double.NegativeInfinity / Double.NegativeInfinity));
-                            possibleSigns |= PossibleSign.NaN;
-                        }
-
-                        if (SignsPossible(lhsPossibleSign, PossibleSign.Positive, rhsPossibleSign, PossibleSign.Zero))
-                        {
-                            //A positive denominator but zero divisor gives PositiveInfinity
-                            possibleSigns |= PossibleSign.PositiveInfinity;
-                        }
-                        if (SignsPossible(lhsPossibleSign, PossibleSign.Negative, rhsPossibleSign, PossibleSign.Zero))
-                        {
-                            //A negative denominator but zero divisor gives NegativeInfinity
-                            possibleSigns |= PossibleSign.NegativeInfinity;
-                        }
-
-                        if (SignsPossible(lhsPossibleSign, PossibleSign.PositiveInfinity, rhsPossibleSign,
-                                          PossibleSign.Zero | PossibleSign.Positive))
-                        {
-                            //A positive infinity divided by a non-negative divisor gives positive infinity
-                            //Assert.IsTrue(Double.IsPositiveInfinity(Double.PositiveInfinity / 0.0));
-                            //Assert.IsTrue(Double.IsPositiveInfinity(Double.PositiveInfinity / 1.0));
-                            possibleSigns |= PossibleSign.PositiveInfinity;
-                        }
-
-                        if (SignsPossible(lhsPossibleSign, PossibleSign.PositiveInfinity, rhsPossibleSign,
-                                          PossibleSign.Negative))
-                        {
-                            //A positive infinity divided by a negative divisor gives negative infinity
-                            //Assert.IsTrue(Double.IsNegativeInfinity(Double.PositiveInfinity / -1.0));
-                            possibleSigns |= PossibleSign.NegativeInfinity;
-                        }
-
-                        if (SignsPossible(lhsPossibleSign, PossibleSign.NegativeInfinity, rhsPossibleSign,
-                                          PossibleSign.Zero | PossibleSign.Positive))
-                        {
-                            //A negative infinity divided by a non-negative divisor gives negative infinity
-                            //Assert.IsTrue(Double.IsNegativeInfinity(Double.NegativeInfinity / 0.0));
-                            //Assert.IsTrue(Double.IsNegativeInfinity(Double.NegativeInfinity / 1.0));
-                            possibleSigns |= PossibleSign.NegativeInfinity;
-                        }
-
-                        if (SignsPossible(lhsPossibleSign, PossibleSign.NegativeInfinity, rhsPossibleSign,
-                                          PossibleSign.Negative))
-                        {
-                            //A negative infinity divided by a negative divisor gives positive infinity
-                            //Assert.IsTrue(Double.IsPositiveInfinity(Double.NegativeInfinity / -1.0));
-                            possibleSigns |= PossibleSign.PositiveInfinity;
-                        }
-
-                        if (CommutativeSignsPossible(lhsPossibleSign, PossibleSign.Positive, rhsPossibleSign,
-                                                     PossibleSign.Negative))
-                        {
-                            //If denominator and divisor are on different sides of zero, result is negaitve
+                            //If denominator and divisor are on different sides of zero, result is negative
                             possibleSigns |= PossibleSign.Negative;
                         }
 
@@ -854,10 +682,6 @@ namespace gp
                             possibleSigns |= PossibleSign.Zero;
                         }
 
-                        //If either sign is NaN the result will be NaN.
-                        possibleSigns |= (lhsPossibleSign & PossibleSign.NaN);
-                        possibleSigns |= (rhsPossibleSign & PossibleSign.NaN);
-
                         return possibleSigns;
                     }
                 case Symbols.Mul:
@@ -866,7 +690,8 @@ namespace gp
                         PossibleSign rhsPossibleSign = Rhs.Sign;
 
                         PossibleSign possibleSigns = 0;
-                        if (CommutativeSignsPossible(lhsPossibleSign, PossibleSign.Zero, rhsPossibleSign, AllFiniteSigns))
+                        if (CommutativeSignsPossible(lhsPossibleSign, PossibleSign.Zero,
+                            rhsPossibleSign, AllSigns))
                         {
                             //Zero multiplied with a finite number is zero
                             //Assert.AreEqual(0.0, 0.0 * 0.0);
@@ -874,62 +699,11 @@ namespace gp
                             //Assert.AreEqual(0.0, 0.0 * -1.0);
                             possibleSigns |= PossibleSign.Zero;
                         }
-
-                        if (CommutativeSignsPossible(lhsPossibleSign, PossibleSign.Zero, rhsPossibleSign,
-                                                     AllInfiniteSigns))
+                        
+                        if (CommutativeSignsPossible(lhsPossibleSign, PossibleSign.Positive,
+                            rhsPossibleSign, PossibleSign.Negative))
                         {
-                            //Zero multiplied with an infinite number is NaN
-                            //Assert.IsTrue(Double.IsNaN(0.0 * Double.NaN));
-                            //Assert.IsTrue(Double.IsNaN(0.0 * Double.PositiveInfinity));
-                            //Assert.IsTrue(Double.IsNaN(0.0 * Double.NegativeInfinity));
-                            possibleSigns |= PossibleSign.NaN;
-                        }
-
-                        if (CommutativeSignsPossible(lhsPossibleSign, PossibleSign.PositiveInfinity, rhsPossibleSign,
-                                                     PossibleSign.Positive)
-                            ||
-                            CommutativeSignsPossible(lhsPossibleSign, PossibleSign.NegativeInfinity, rhsPossibleSign,
-                                                     PossibleSign.Negative)
-                            ||
-                            SignsPossible(lhsPossibleSign, PossibleSign.PositiveInfinity, rhsPossibleSign,
-                                          PossibleSign.PositiveInfinity)
-                            ||
-                            SignsPossible(lhsPossibleSign, PossibleSign.NegativeInfinity, rhsPossibleSign,
-                                          PossibleSign.NegativeInfinity))
-                        {
-                            //Positive infinity multiplied with a positive number is positive infinity
-                            //Assert.IsTrue(Double.IsPositiveInfinity(Double.PositiveInfinity * 1.0));
-                            //Negative infinity multiplied with a negative number is positive infinity
-                            //Assert.IsTrue(Double.IsPositiveInfinity(Double.NegativeInfinity * -1.0));
-                            //Positive infinity multiplied with positive infinity, or positive infinity multiplied with negative infinity is positive infinity
-                            //Assert.IsTrue(Double.IsPositiveInfinity(Double.PositiveInfinity * Double.PositiveInfinity));
-                            //Assert.IsTrue(Double.IsPositiveInfinity(Double.NegativeInfinity * Double.NegativeInfinity));
-                            possibleSigns |= PossibleSign.PositiveInfinity;
-                        }
-
-                        if (CommutativeSignsPossible(lhsPossibleSign, PossibleSign.PositiveInfinity, rhsPossibleSign,
-                                                     PossibleSign.Negative)
-                            ||
-                            CommutativeSignsPossible(lhsPossibleSign, PossibleSign.NegativeInfinity, rhsPossibleSign,
-                                                     PossibleSign.Positive)
-                            ||
-                            CommutativeSignsPossible(lhsPossibleSign, PossibleSign.PositiveInfinity, rhsPossibleSign,
-                                                     PossibleSign.NegativeInfinity))
-                        {
-                            //Positive infinity multiplied with a negative number is negative infinity
-                            //Assert.IsTrue(Double.IsNegativeInfinity(Double.PositiveInfinity * -1.0));
-                            //Negative infinity multiplied with a positive number is negative infinity
-                            //Assert.IsTrue(Double.IsNegativeInfinity(Double.NegativeInfinity * 1.0));
-                            //Positive infinity  multiplied with negative infinity is negative infinity
-                            //Assert.IsTrue(Double.IsNegativeInfinity(Double.PositiveInfinity * Double.NegativeInfinity));
-                            //Assert.IsTrue(Double.IsNegativeInfinity(Double.NegativeInfinity * Double.PositiveInfinity));
-                            possibleSigns |= PossibleSign.NegativeInfinity;
-                        }
-
-                        if (CommutativeSignsPossible(lhsPossibleSign, PossibleSign.Positive, rhsPossibleSign,
-                                                     PossibleSign.Negative))
-                        {
-                            //If both terms are on different sides of zero, result is negaitve
+                            //If both terms are on different sides of zero, result is negateve
                             possibleSigns |= PossibleSign.Negative;
                         }
 
@@ -941,10 +715,6 @@ namespace gp
                             possibleSigns |= PossibleSign.Positive;
                         }
 
-                        //If either sign is NaN the result will be NaN.
-                        possibleSigns |= (lhsPossibleSign & PossibleSign.NaN);
-                        possibleSigns |= (rhsPossibleSign & PossibleSign.NaN);
-
                         return possibleSigns;
                     }
             }
@@ -952,7 +722,7 @@ namespace gp
             return 0;
         }
 
-        private bool TickNextConditionalChild(RuntimeState runtimeState, ConstantsSet constants, ref double result)
+        private bool TickNextConditionalChild(RuntimeState runtimeState, ConstantsSet constants, ref decimal result)
         {
             CallTree conditionalChild;
             if (TickNextConditionalChild(runtimeState, constants, out conditionalChild))
@@ -1014,7 +784,7 @@ namespace gp
             }
             if (this._evaluated && IsBoolean)
             {
-                if (Result != 0.0 && Result != 1.0)
+                if (Result != 0.0m && Result != 1.0m)
                 {
                     Console.WriteLine("Boolean expression rendered {0}", Result);
                 }
@@ -1062,11 +832,9 @@ namespace gp
                     }
                 case Symbols.AssignWorkingVariable:
                     {
-                        if (!Double.IsNaN(Operand.Result) && !Double.IsInfinity(Operand.Result))
-                        {
-                            //Assings the given working variable to the RHS if it is different from infinity.
-                            runtimeState.Variables[_qualifier] = Operand.Result;
-                        }
+                       // Assingns the given working variable to the RHS
+                       runtimeState.Variables[_qualifier] = Operand.Result;
+                       
                         //The result is always the RHS (even if the variable does not change),
                         //this is for not changing the program by removing the assignment
                         this._result = Operand.Result;
@@ -1075,8 +843,7 @@ namespace gp
                     //Unary operators:
                 case Symbols.Not:
                     {
-                        //Infinitiy is true.
-                        Bresult = Operand.Result == 0.0;
+                        Bresult = !Operand.Bresult;
                         return true;
                     }
                     //Binary operators:
@@ -1095,12 +862,29 @@ namespace gp
                         this._result = Lhs.Result*Rhs.Result;
                         return true;
                     }
-                case Symbols.Div:
+                    case Symbols.Div:
                     {
-                        this._result = Lhs.Result/Rhs.Result;
+                        if (Math.Abs(Rhs.Result) <= 0.001m)
+                        {
+                            // We treat division by zero as division by one
+                            this._result = Lhs.Result;
+                        }
+                        else
+                        {
+                            try
+                            {
+                                this._result = Lhs.Result / Rhs.Result;
+                            }
+                            catch (DivideByZeroException e)
+                            {
+                                // We treat division by zero as division by one
+                                this._result = Lhs.Result;
+                            }
+                        }
+
                         return true;
                     }
-                case Symbols.Lt:
+                    case Symbols.Lt:
                     {
                         Bresult = Lhs.Result < Rhs.Result;
                         return true;
@@ -1215,7 +999,7 @@ namespace gp
                         }
                         return _conditionalChildrenIndex >= _conditionalChildren.Length;
                     }
-                    /*case Gp.Symbols.Mov:
+                    case Symbols.Mov:
                     {
                         //Like assign but without using qualifier for the destination address, instead
                         //it is calculated from the LHS expression.
@@ -1230,8 +1014,12 @@ namespace gp
                          *      let[0] add var[0] lit[1]        #       ++x[0];
                          *                                      #   }                        
                         */
-                    /*  return runtimeState.Variables[(int) Math.Abs(_args[0])] = _args[1];
-              }*/
+                        runtimeState.Variables[(int)Math.Abs(Lhs.Result)] = Operand.Result;
+                        //The result is always the RHS (even if the variable does not change),
+                        //this is for not changing the program by removing the assignment
+                        this._result = Operand.Result;
+                        return true;
+                    }
                     //Ternary operator(s):
                 case Symbols.Ifelse:
                     {
@@ -1251,7 +1039,7 @@ namespace gp
                     }
                 case Symbols.Noop:
                     {
-                        this._result = Double.NaN;
+                        this.Bresult = false;
                         return true;
                     }
                 default:
@@ -1276,7 +1064,7 @@ namespace gp
             //_loopStateList = new List<VariableSet>();
             ResetPreEvaluatedArgs();
             ResetConditionalChildren();
-            this._result = Double.NaN;
+            this._result = 0;
             this._evaluated = false;
             _sign = 0;
         }
@@ -1442,7 +1230,7 @@ namespace gp
                 return callTree;
             }
 
-            callTree = SimplifyArithemticExpression(trace);
+            callTree = SimplifyArithmeticExpression(constants, trace);
             if (callTree != null)
             {
                 //1*exp => exp; 0+exp=>exp
@@ -1491,19 +1279,9 @@ namespace gp
                     throw new InvalidOperationException("CallTree IsConstant but Tick() returns false");
                 }
 
-                if (_symbol != Symbols.Noop && Double.IsNaN(Result))
-                {
-                    if (trace)
-                    {
-                        Console.WriteLine("Replacing NaN double constant with Noop");
-                    }
-                    //We are not a Noop but result is Nan..
-                    return new CallTree(Symbols.Noop, _varnumber);
-                }
-
                 if (_symbol == Symbols.DoubleLiteral)
                 {
-                    if (!Double.IsInfinity(Result) && Result == Math.Floor(Result))
+                    if (Result == Math.Floor(Result))
                     {
                         if (trace)
                         {
@@ -1521,40 +1299,6 @@ namespace gp
             CallTree callTree = null;
             if (IsRelational)
             {
-                if (Lhs.IsConstant && Double.IsNaN(Lhs.Result))
-                {
-                    //NaN relop Exp is false unless the relop is <>
-                    //Assert.IsTrue(Double.NaN != Double.NaN);
-                    //Assert.IsFalse(Double.NaN <= 1000.0);
-                    //Assert.IsFalse(Double.NaN <= Double.NaN);
-                    //Assert.IsFalse(Double.NaN <= Double.PositiveInfinity);
-                    //Assert.IsFalse(Double.NaN <= Double.NegativeInfinity);
-                    //Assert.IsFalse(Double.NaN < 1000.0);
-                    //Assert.IsFalse(Double.NaN < Double.NaN);
-                    //Assert.IsFalse(Double.NaN < Double.PositiveInfinity);
-                    //Assert.IsFalse(Double.NaN < Double.NegativeInfinity);
-                    if (trace)
-                    {
-                        Console.WriteLine("Replacing NaN relop expression with constant true or false");
-                    }
-                    return CreateChain(constants, Rhs, _symbol == Symbols.Neq);
-                }
-
-                if (Rhs.IsConstant && Double.IsNaN(Rhs.Result))
-                {
-                    //NaN relop Exp is false unless the relop is <>
-                    //Assert.IsTrue(Double.NaN != Double.NaN);
-                    //Assert.IsFalse(Double.NaN <= 1000.0);
-                    //Assert.IsFalse(Double.NaN <= Double.NaN);
-                    //Assert.IsFalse(Double.NaN <= Double.PositiveInfinity);
-                    //Assert.IsFalse(Double.NaN <= Double.NegativeInfinity);
-                    //Assert.IsFalse(Double.NaN < 1000.0);
-                    //Assert.IsFalse(Double.NaN < Double.NaN);
-                    //Assert.IsFalse(Double.NaN < Double.PositiveInfinity);
-                    //Assert.IsFalse(Double.NaN < Double.NegativeInfinity);
-                    return CreateChain(constants, Lhs, _symbol == Symbols.Neq);
-                }
-
                 //If operation is <> but both sides are booleans then make this into XOR
                 if (_symbol == Symbols.Neq && Lhs.IsBoolean && Rhs.IsBoolean)
                 {
@@ -1577,7 +1321,7 @@ namespace gp
             {
                 if (lhs.IsConstant && lhs.IsPositive)
                 {
-                    if (lhs.Result > 1.0)
+                    if (lhs.Result > 1.0m)
                     {
                         switch (symbol)
                         {
@@ -1600,7 +1344,7 @@ namespace gp
                         }
                     }
 
-                    else if (lhs.Result < 1.0)
+                    else if (lhs.Result < 1.0m)
                     {
                         switch (symbol)
                         {
@@ -1608,7 +1352,7 @@ namespace gp
                                 if (trace)
                                 {
                                     Console.WriteLine(
-                                        "Replacing constant above 0 but less than 0 = bool expression with false");
+                                        "Replacing constant above 0 but less than 1 = bool expression with false");
                                 }
                                 return CreateChain(constants, rhs, false);
                             case Symbols.Gt:
@@ -1944,7 +1688,7 @@ namespace gp
             return null;
         }
 
-        private CallTree SimplifyArithemticExpression(Symbols symbol, CallTree lhs, CallTree rhs, bool trace)
+        private CallTree SimplifyArithmeticExpression(ConstantsSet constants, Symbols symbol, CallTree lhs, CallTree rhs, bool trace)
         {
             if (!IsArithmeticExpression)
             {
@@ -1953,27 +1697,9 @@ namespace gp
 
             if (lhs.IsConstant)
             {
-                if (Double.IsNaN(lhs.Result))
-                {
-                    if (trace)
-                    {
-                        Console.WriteLine("Replacing NaN ARITOP exp with NaN");
-                    }
-                    return CreateChain(rhs, lhs);
-                }
-
-                if (rhs.IsConstant && Double.IsNaN(rhs.Result))
-                {
-                    if (trace)
-                    {
-                        Console.WriteLine("Replacing exp ARITOP NaN with NaN");
-                    }
-                    return CreateChain(lhs, rhs);
-                }
-
                 if (symbol == Symbols.Add && lhs.IsZero)
                 {
-                    //0 + exp => exp (0 + infinity = infinity)
+                    //0 + exp => exp
                     if (trace)
                     {
                         Console.WriteLine("Replacing 0+exp with exp");
@@ -1981,59 +1707,37 @@ namespace gp
                     return rhs;
                 }
 
-                if (lhs.IsZero && rhs.ResultIsFinite && (symbol == Symbols.Mul ||
-                                                         (symbol == Symbols.Div && rhs.ResultIsNeverZero)))
+                if (lhs.IsZero && (symbol == Symbols.Mul || (symbol == Symbols.Div && rhs.ResultIsNeverZero)))
                 {
-                    //0*exp and 0/exp are both 0 (except for 0*infinity or 0/infinity which are both NaN)
-                    //but 0 / 0 is also infinity
+                    //0*exp and 0/exp are both 0
                     //(If RHS lacks side effects it might be removed later according to ReplaceLhsWithoutSideEffectsInChainWithLhs())
                     if (trace)
                     {
                         Console.WriteLine("Replacing 0*exp or 0/exp with 0");
                     }
-                    return CreateChain(rhs, lhs);
+
+                    return lhs;
                 }
 
-                if ((symbol == Symbols.Div && Double.IsPositiveInfinity(lhs.Result) ||
-                     Double.IsNegativeInfinity(lhs.Result)) && !SignPossible(rhs.Sign, AllInfiniteSigns))
+                if (symbol == Symbols.Mul && lhs.Result == 1.0m)
                 {
-                    //PositiveInfinity/any finite number (including 0.0) = PositiveInfity
-                    //NegativeInfinity/any finite number (including 0.0) = NegativeInfinity
-                    if (trace)
-                    {
-                        Console.WriteLine("Replacing PositiveInfinity/exp or NegativeInfinity/exp with lhs");
-                    }
-                    return CreateChain(rhs, lhs);
-                }
-
-                if (symbol == Symbols.Mul && lhs.Result == 1.0)
-                {
-                    //1 * exp => exp (1 * infinity = infinity)
+                    //1.0 * exp => exp
                     if (trace)
                     {
                         Console.WriteLine("Replacing 1*exp with exp");
                     }
+
                     return rhs;
                 }
             }
 
             if (rhs.IsConstant)
             {
-                if (Double.IsNaN(rhs.Result))
-                {
-                    //(If LHS lacks side effects it might be removed later according to ReplaceLhsWithoutSideEffectsInChainWithLhs())
-                    if (trace)
-                    {
-                        Console.WriteLine("Replacing exp ARITOP NaN with NaN");
-                    }
-                    return CreateChain(lhs, rhs);
-                }
-
                 if (symbol == Symbols.Div)
                 {
-                    if (rhs.Result == 1.0)
+                    if (rhs.Result == 1.0m)
                     {
-                        //exp / 1.0 => exp (inf / 1.0 => inf)
+                        //exp / 1.0 => exp
                         if (trace)
                         {
                             Console.WriteLine("Replacing exp/1.0 with exp");
@@ -2041,30 +1745,30 @@ namespace gp
                         return lhs;
                     }
 
-                    //exp / 0.0 => NaN (expect PositiveInfinity/0.0 which is PositiveInfinity or NegativeInfiity/0.0 which is NegativeInfinity
-                    if (!SignPossible(rhs.Sign, AllInfiniteSigns) && Double.IsNaN(1.0/rhs.Result))
+                    //Special semantics to avoid handling non-normal numbers: exp / 0.0 => exp
+                    if (rhs.IsZero)
                         //But we check by seeing if dividing 1.0 with rhs actually gives NaN.
                     {
                         if (trace)
                         {
-                            Console.WriteLine("Replacing exp/0.0 with Noop");
+                            Console.WriteLine("Replacing exp/0.0 with exp");
                         }
-                        return CreateChain(lhs, new CallTree(Symbols.Noop, _varnumber));
+                        return lhs;
                     }
                 }
             }
             return null;
         }
 
-        private CallTree SimplifyArithemticExpression(bool trace)
+        private CallTree SimplifyArithmeticExpression(ConstantsSet constants, bool trace)
         {
             CallTree callTree = null;
             if (_preEvaluatedArgs.Length == 2)
             {
-                callTree = SimplifyArithemticExpression(_symbol, Lhs, Rhs, trace);
+                callTree = SimplifyArithmeticExpression(constants, _symbol, Lhs, Rhs, trace);
                 if (IsCommutative)
                 {
-                    callTree = callTree ?? SimplifyArithemticExpression(_symbol, Rhs, Lhs, trace);
+                    callTree = callTree ?? SimplifyArithmeticExpression(constants, _symbol, Rhs, Lhs, trace);
                 }
             }
             return callTree;
@@ -2167,7 +1871,7 @@ namespace gp
                     case Symbols.Lteq:
                         //An inequality is true if sides are equal (unless exp is NaN as NaN <> NaN)
                         {
-                            if (LhsEqualsRhs() && !NanResultPossible)
+                            if (LhsEqualsRhs())
                             {
                                 if (trace)
                                 {
@@ -2182,7 +1886,7 @@ namespace gp
                     case Symbols.Neq:
                         //An inequality is false if sides are equal (unless exp is NaN as NaN <> NaN)
                         {
-                            if (LhsEqualsRhs() && !NanResultPossible)
+                            if (LhsEqualsRhs())
                             {
                                 if (trace)
                                 {
@@ -2193,9 +1897,9 @@ namespace gp
                             break;
                         }
                     case Symbols.Div:
-                        //(exp / exp) => 1 (unless exp is NaN or infinite where result is also NaN)
+                        //(exp / exp) => 1 (unless exp is 0 where result is also 0)
                         {
-                            if (LhsEqualsRhs() && Lhs.ResultIsFinite && Lhs.ResultIsNeverZero)
+                            if (LhsEqualsRhs() && Rhs.ResultIsNeverZero)
                             {
                                 if (trace)
                                 {
@@ -2248,15 +1952,13 @@ namespace gp
             {
                 if (_symbol == Symbols.Sub)
                 {
-                    //(exp-exp) = 0 (unless exp is infinite where result is also NaN)
-                    if (Lhs.ResultIsFinite)
+                    //(exp-exp) = 0
+                    if (trace)
                     {
-                        if (trace)
-                        {
-                            Console.WriteLine("Replacing exp-exp with 0");
-                        }
-                        return CreateConstantCallTree(0, constants);
+                        Console.WriteLine("Replacing exp-exp with 0");
                     }
+
+                    return CreateConstantCallTree(0, constants);
                 }
                 if (_symbol == Symbols.Add)
                 {
@@ -2649,32 +2351,42 @@ namespace gp
 
             if (_symbol == Symbols.If)
             {
-                if ((_preEvaluatedArgs[0]._symbol == Symbols.Not &&
-                     _preEvaluatedArgs[0].Operand.Equals(_conditionalChildren[0]))
-                    ||
-                    (_conditionalChildren[0]._symbol == Symbols.Not &&
-                     _conditionalChildren[0].Operand.Equals(_preEvaluatedArgs[0])))
+                if (LacksSideEffects)
                 {
-                    //if not term then term => is zero if and only if term is zero, otherwise NaN, hence it´s bool value is same as term and can be replaced if there are no side effects.
-                    //if term then not term => if term is zero then the expression becomes NaN which is true. if term is nonzero expression becomes zero which is false. so it can be simplfied to not term when used as a booelan and there are no side effects.
-                    if (LacksSideEffects)
+                    if (_preEvaluatedArgs[0]._symbol == Symbols.Not &&
+                        _preEvaluatedArgs[0].Operand.Equals(_conditionalChildren[0]))
                     {
                         if (trace)
                         {
                             Console.WriteLine(
-                                "Replacing IF exp THEN NOT(exp) or IF NOT(exp) THEN exp with guard expression");
+                                "Replacing IF exp THEN NOT(exp) with false");
                         }
-                        return _conditionalChildren[0];
+                        //if not X then X is always zero/false and may be replaced with constant if there are no side effects.
+                        return CreateConstantCallTree(false, constants);
                     }
-                }
-                else if (_preEvaluatedArgs[0].Equals(_conditionalChildren[0]))
-                {
-                    //If term then term can never be zero because if term is zero the result is NaN.
-                    if (trace)
+
+                    if (_conditionalChildren[0]._symbol == Symbols.Not &&
+                        _conditionalChildren[0].Operand.Equals(_preEvaluatedArgs[0]))
                     {
-                        Console.WriteLine("Replacing IF term THEN term with TRUE");
+                        if (trace)
+                        {
+                            Console.WriteLine(
+                                "Replacing IF NOT(exp) THEN exp with false");
+                        }
+
+                        //if not X then X is always zero/false and may be replaced with constant zero if there are no side effects.
+                        return CreateConstantCallTree(0, constants);
                     }
-                    return CreateChain(constants, this, true);
+
+                    if (_preEvaluatedArgs[0].Equals(_conditionalChildren[0]))
+                    {
+                        //If term then term can never be zero because if term is zero the result is NaN.
+                        if (trace)
+                        {
+                            Console.WriteLine("Replacing IF term THEN term with term");
+                        }
+                        return CreateChain(constants, this, true);
+                    }
                 }
             }
             if (_symbol == Symbols.Ifelse)
@@ -2727,13 +2439,9 @@ namespace gp
             return CreateConstantCallTree(constant ? 1 : 0, constants);
         }
 
-        private CallTree CreateConstantCallTree(double constant, ConstantsSet constants)
+        private CallTree CreateConstantCallTree(decimal constant, ConstantsSet constants)
         {
-            if (Double.IsNaN(constant))
-            {
-                return new CallTree(Symbols.Noop, _varnumber);                
-            }
-            if (!Double.IsInfinity(constant) && constant == Math.Floor(constant))
+            if (constant == (int)(constant))
             {
                 return CreateConstantCallTree((int) constant, constants);
             }
@@ -2762,6 +2470,7 @@ namespace gp
                 case Symbols.InputArgument:
                 case Symbols.WorkingVariable:
                 case Symbols.AssignWorkingVariable:
+                case Symbols.Mov:
                 case Symbols.While:
                     return null;
             }
@@ -3354,11 +3063,8 @@ namespace gp
         {
             Positive = 1,
             Negative = 2,
-            Zero = 4,
-            NaN = 8,
-            PositiveInfinity = 16,
-            NegativeInfinity = 32
-        } ;
+            Zero = 4
+        };
 
         #endregion
     }

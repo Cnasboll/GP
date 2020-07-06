@@ -85,6 +85,9 @@
     <Content Include="Fitness\succ2x.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <Content Include="Fitness\sum.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <Content Include="Fitness\test.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
