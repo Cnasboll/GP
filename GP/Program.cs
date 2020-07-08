@@ -259,16 +259,18 @@ namespace gp
             {
                 if (pc != Code.Count)
                 {
+                    var stringBuilder = new StringBuilder();
                     int newPc = 0;
                     new CallTree(this, ref newPc);
-                    Print();
+                    Print(stringBuilder);
                     if (Code.Count > pc)
                     {
                         var missingCallTree = new CallTree(this, ref newPc);
                         var missingProgram = new Program(Varnumber, new List<int>(missingCallTree.Encode()),
                                                          _constantsSet, WorkingVariablesCount);
-                        missingProgram.Print();
+                        missingProgram.Print(stringBuilder);
                     }
+                    Console.Out.Write(stringBuilder);
                     throw new Exception("Traverse(0) renders wrong length");
                 }
             }
@@ -569,11 +571,6 @@ namespace gp
             }
         }
 
-        public void Print()
-        {
-            Console.WriteLine(ToString());
-        }
-
         public override string ToString()
         {
             var stringBuilder = new StringBuilder();
@@ -581,11 +578,10 @@ namespace gp
             return stringBuilder.ToString();
         }
 
-        public string ToCSharp()
+        public void Print(StringBuilder stringBuilder)
         {
-            var stringBuilder = new StringBuilder();
-            Print(0, stringBuilder, true);
-            return stringBuilder.ToString();
+            Print(0, stringBuilder, false);
+            stringBuilder.AppendLine();
         }
 
         private int Print(int pc, StringBuilder stringBuilder, bool appendMToDecimals)
@@ -884,12 +880,12 @@ namespace gp
             return null;
         }
 
-        public Program Simplify()
+        public Program Simplify(StringBuilder stringBuilder)
         {
-            return Simplify(null);
+            return Simplify(null, stringBuilder);
         }
 
-        public Program Simplify(FitnessEvaluation fitnessEvaluation)
+        public Program Simplify(FitnessEvaluation fitnessEvaluation, StringBuilder stringBuilder)
         {
             int pc = 0;
             var callTree = new CallTree(_varnumber, _code, ref pc);
@@ -897,7 +893,7 @@ namespace gp
             CallTree simplifiedCallTree;
             if (fitnessEvaluation != null)
             {
-                Print();
+                Print(stringBuilder);
             }
             do
             {
@@ -905,13 +901,13 @@ namespace gp
                 simplifiedCallTree = callTree.Simplify(constantsSet, fitnessEvaluation != null);
                 if (fitnessEvaluation != null && simplifiedCallTree != null)
                 {
-                    Console.WriteLine("After removing redundant code:");
+                    stringBuilder.AppendLine("After removing redundant code:");
 
                     var simplifiedprogram = new Program(_varnumber, new List<int>(simplifiedCallTree.Encode()),
                                                         constantsSet,
                                                         WorkingVariablesCount);
-                    simplifiedprogram.Print();
-                    if (AnalyzeTestCasedifferences(fitnessEvaluation, simplifiedprogram))
+                    simplifiedprogram.Print(stringBuilder);
+                    if (AnalyzeTestCasedifferences(fitnessEvaluation, simplifiedprogram, stringBuilder))
                     {
                         break;
                     }
@@ -925,12 +921,12 @@ namespace gp
                     simplifiedCallTree = tmpCallTree;
                     if (fitnessEvaluation != null)
                     {
-                        Console.WriteLine("After removing unassigned variables:");
+                        stringBuilder.AppendLine("After removing unassigned variables:");
                         var simplifiedprogram = new Program(_varnumber, new List<int>(simplifiedCallTree.Encode()),
                                                             constantsSet,
                                                             WorkingVariablesCount);
-                        simplifiedprogram.Print();
-                        if (AnalyzeTestCasedifferences(fitnessEvaluation, simplifiedprogram))
+                        simplifiedprogram.Print(stringBuilder);
+                        if (AnalyzeTestCasedifferences(fitnessEvaluation, simplifiedprogram, stringBuilder))
                         {
                             break;
                         }
@@ -945,12 +941,12 @@ namespace gp
                     simplifiedCallTree = tmpCallTree;
                     if (fitnessEvaluation != null)
                     {
-                        Console.WriteLine("After removing assignments to variables not used again:");
+                        stringBuilder.AppendLine("After removing assignments to variables not used again:");
                         var simplifiedprogram = new Program(_varnumber, new List<int>(simplifiedCallTree.Encode()),
                                                             constantsSet,
                                                             WorkingVariablesCount);
-                        simplifiedprogram.Print();
-                        if (AnalyzeTestCasedifferences(fitnessEvaluation, simplifiedprogram))
+                        simplifiedprogram.Print(stringBuilder);
+                        if (AnalyzeTestCasedifferences(fitnessEvaluation, simplifiedprogram, stringBuilder))
                         {
                             break;
                         }
@@ -964,12 +960,12 @@ namespace gp
                     simplifiedCallTree = tmpCallTree;
                     if (fitnessEvaluation != null)
                     {
-                        Console.WriteLine("After removing redundant usages of assigned variables:");
+                        stringBuilder.AppendLine("After removing redundant usages of assigned variables:");
                         var simplifiedprogram = new Program(_varnumber, new List<int>(simplifiedCallTree.Encode()),
                                                             constantsSet,
                                                             WorkingVariablesCount);
-                        simplifiedprogram.Print();
-                        if (AnalyzeTestCasedifferences(fitnessEvaluation, simplifiedprogram))
+                        simplifiedprogram.Print(stringBuilder);
+                        if (AnalyzeTestCasedifferences(fitnessEvaluation, simplifiedprogram, stringBuilder))
                         {
                             break;
                         }
@@ -978,9 +974,8 @@ namespace gp
 
                 if (simplifiedCallTree != null && simplifiedCallTree.Equals(callTree))
                 {
-                    Console.WriteLine("Simplified call tree is equal to original call tree, giving up");
-                    new Program(_varnumber, new List<int>(callTree.Encode()), constantsSet, WorkingVariablesCount).Print
-                        ();
+                    stringBuilder.AppendLine("Simplified call tree is equal to original call tree, giving up");
+                    new Program(_varnumber, new List<int>(callTree.Encode()), constantsSet, WorkingVariablesCount).Print(stringBuilder);
                     //break;
                 }
                 callTree = simplifiedCallTree ?? callTree;
@@ -988,13 +983,14 @@ namespace gp
             return new Program(_varnumber, new List<int>(callTree.Encode()), constantsSet, WorkingVariablesCount);
         }
 
-        public bool AnalyzeTestCasedifferences(FitnessEvaluation fitnessEvaluation, Program simplifiedProgram)
+        public bool AnalyzeTestCasedifferences(FitnessEvaluation fitnessEvaluation, Program simplifiedProgram,
+            StringBuilder stringBuilder)
         {
             //We need to evaluate unknown test-cases too.
-            fitnessEvaluation.Evaluate(false, true);
+            fitnessEvaluation.Evaluate(false, true, stringBuilder);
 
             var simplifiedFitnessEvaluation = new FitnessEvaluation(simplifiedProgram, fitnessEvaluation.Problem);
-            simplifiedFitnessEvaluation.Evaluate(false, true, fitnessEvaluation.Results);
+            simplifiedFitnessEvaluation.Evaluate(false, true, fitnessEvaluation.Results, stringBuilder);
             for (int i = 0; i < fitnessEvaluation.Results.Length; ++i)
             {
                 if (fitnessEvaluation.Results[i] != simplifiedFitnessEvaluation.Results[i])

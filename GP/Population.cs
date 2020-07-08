@@ -1,6 +1,9 @@
 ﻿using System;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
+using System.Text;
 using System.Threading;
 
 namespace gp
@@ -8,28 +11,26 @@ namespace gp
     public class Population : IList<FitnessEvaluation>
     {
         private readonly Problem _problem;
+        private readonly int _index;
 
         private readonly List<FitnessEvaluation> _population;
         private FitnessEvaluation _bestFitnessEvaluation;
         
         private bool _solved;
 
-        public Population(Random rd, int depth, Problem problem)
+        public Population(Random rd, int depth, Problem problem, int index)
         {
             _problem = problem;
+            _index = index;
             _population = new List<FitnessEvaluation>();
-            int previousPercentage = -1;
-            Console.Out.WriteLine("Creating initial population...");
+            Console.Out.WriteLine($"Creating initial population {index}");
             for (int i = 0; !_solved && i < Gp.Popsize; ++i)
             {
-                int percentage = (int) Math.Round(i * 100.0 / Gp.Popsize);
-                if (percentage > previousPercentage)
-                {
-                    previousPercentage = percentage;
-                    Console.Out.WriteLine($"{percentage}%");
-                }
-
                 Add(new FitnessEvaluation(new Program(rd, depth, problem.Varnumber), problem));
+                if (_solved)
+                {
+                    return;
+                }
             }
         }
 
@@ -48,9 +49,15 @@ namespace gp
         public void Add(FitnessEvaluation item)
         {
             _population.Add(item);
-            item.Evaluate();
+            var stringBuilder = new StringBuilder();
+            item.Evaluate(stringBuilder);
 
-            OnFitness(item);
+            OnFitness(item, stringBuilder);
+            if (stringBuilder.Length > 0)
+            {
+                stringBuilder.Insert(0, "\n");
+                Console.Out.WriteLine(stringBuilder);
+            }
         }
 
         public void Clear()
@@ -83,6 +90,9 @@ namespace gp
             get { return false; }
         }
 
+        public bool Solved => _solved;
+        public int Index => _index;
+
         public int IndexOf(FitnessEvaluation item)
         {
             return _population.IndexOf(item);
@@ -106,117 +116,138 @@ namespace gp
 
         #endregion
 
-        public void OnFitness(FitnessEvaluation fitnessEvaluation)
+        public void OnFitness(FitnessEvaluation fitnessEvaluation, StringBuilder stringBuilder)
         {
             if (_bestFitnessEvaluation == null || fitnessEvaluation.BetterThan(_bestFitnessEvaluation))
             {
                 _bestFitnessEvaluation = fitnessEvaluation;
-                Console.WriteLine("Best individual so far: ");
-                _bestFitnessEvaluation.Program.Print();
-                Console.WriteLine("Fitness=" + _bestFitnessEvaluation.ErrorSum);
-
-                _bestFitnessEvaluation.PrintAllResults();
+                _bestFitnessEvaluation.PrintAllResults(stringBuilder);
+                stringBuilder.AppendLine($"Best individual so far in population {_index}: ");
+                _bestFitnessEvaluation.Program.Print(stringBuilder);
+                stringBuilder.AppendLine("Fitness=" + _bestFitnessEvaluation.ErrorSum);
 
                 if (_bestFitnessEvaluation.ErrorSum < 1e-5m)
                 {
-                    Console.Write("PROBLEM SOLVED\n");
+                    stringBuilder.AppendLine("PROBLEM SOLVED");
                     _solved = true;
                 }
 
-                Console.WriteLine("Simplified as: ");
-                var simplifiedProgram = AssertSimplification(fitnessEvaluation);
-                simplifiedProgram.Print();
+                stringBuilder.AppendLine("Simplified as: ");
+                var simplifiedProgram = AssertSimplification(fitnessEvaluation, stringBuilder);
+                simplifiedProgram.Print(stringBuilder);
             }
         }
 
-        Program AssertSimplification(FitnessEvaluation fitnessEvaluation)
+        Program AssertSimplification(FitnessEvaluation fitnessEvaluation, StringBuilder stringBuilder)
         {
-            var simplifiedProgram = fitnessEvaluation.Program.Simplify();
+            var simplifiedProgram = fitnessEvaluation.Program.Simplify(stringBuilder);
             var simplifiedFitnessEvaluation = new FitnessEvaluation(simplifiedProgram, _problem);
 
-            simplifiedFitnessEvaluation.Evaluate((false));
+            simplifiedFitnessEvaluation.Evaluate((false), stringBuilder);
 
 
             if (!fitnessEvaluation.EqualResults(simplifiedFitnessEvaluation))
             {
-                Console.WriteLine($"Simplification rendered another program: Fitness of original program is {fitnessEvaluation.ErrorSum}\nbut fitness of simplified program is simplified program is  {simplifiedFitnessEvaluation.ErrorSum}");
-                Console.WriteLine("Here is a trace of the simplification for debugging:");
-                _bestFitnessEvaluation.Program.Simplify(_bestFitnessEvaluation);
+                stringBuilder.AppendLine($"Simplification rendered another program: Fitness of original program is {fitnessEvaluation.ErrorSum}\nbut fitness of simplified program is simplified program is  {simplifiedFitnessEvaluation.ErrorSum}");
+                stringBuilder.AppendLine("Here is a trace of the simplification for debugging:");
+                _bestFitnessEvaluation.Program.Simplify(_bestFitnessEvaluation, stringBuilder);
 
                 simplifiedFitnessEvaluation = new FitnessEvaluation(simplifiedProgram, _problem);
 
-                simplifiedFitnessEvaluation.Evaluate((true));
+                simplifiedFitnessEvaluation.Evaluate((true), stringBuilder);
 
             }
 
             return simplifiedProgram;
         }
 
-        public void Evolve(Random rd)
+        public void Evolve(Random rd, CancellationToken token, ConcurrentQueue<FitnessEvaluation>[] migrationQueues)
         {
 
             if (!_solved)
             {
-                Console.WriteLine("Commencing evolutionary process");
+                Console.WriteLine($"Commencing evolutionary process of population {_index}");
             }
 
             int generation = 0;
-            while (!_solved)
+            int maxMigrationQIndex = migrationQueues.Length - 1;
+            while (!_solved && !token.IsCancellationRequested)
             {
-                Console.Out.WriteLine($"Evolving generation {++generation}");
-                int newIndivids = 0;
-                int previousPercentage = -1;
-                while (!_solved && newIndivids < Gp.Popsize)
+                Console.Out.WriteLine($"Evolving generation {++generation} of population {_index}");
+                for (int newIndivids = 0; !_solved && !token.IsCancellationRequested && newIndivids < Gp.Popsize; ++newIndivids)
                 {
-                    int percentage = (int) Math.Round(newIndivids * 100.0 / Gp.Popsize);
-                    if (percentage > previousPercentage)
+                    var stringBuilder = new StringBuilder();
+                    FitnessEvaluation offspring = null;
+                    // Always look at one random migration queue other than this one and try to take the item.
+                    int migrationQueueIndex = rd.Next(maxMigrationQIndex);
+
+                    int index = -1;
+
+                    if (!(migrationQueueIndex != _index &&
+                          migrationQueues[migrationQueueIndex].TryDequeue(out offspring)))
                     {
-                        previousPercentage = percentage;
-                        Console.Out.WriteLine($"{percentage}%");
+                        // We did not get one form that queue. Try to evolve one.
+                        Program newind;
+                        if (rd.NextDouble() < Gp._crossoverProb)
+                        {
+                            FitnessEvaluation parent1 = _population[Tournament(rd, Gp.Tsize)];
+                            FitnessEvaluation parent2 = _population[Tournament(rd, Gp.Tsize)];
+
+                            newind = parent1.Program.Crossover(rd, parent2.Program);
+                        }
+                        else
+                        {
+                            newind = _population[Tournament(rd, Gp.Tsize)].Program.Mutate(rd, Gp._pmutPerNode);
+                        }
+
+                        offspring = new FitnessEvaluation(newind, _problem);
+                        offspring.Evaluate(stringBuilder);
+
+                        if (rd.NextDouble() < Gp._migrationProb)
+                        {
+                            if (migrationQueues[_index].Count < 10)
+                            {
+                                // Find *good* individual to move out to the migration queue. It is being replaced with the new one.
+                                index = Tournament(rd, Gp.Tsize);
+                                migrationQueues[_index].Enqueue(this._population[index]);
+                            }
+                        }
                     }
 
-                    Program newind;
-                    if (rd.NextDouble() < Gp._crossoverProb)
+                    if (index < 0)
                     {
-                        FitnessEvaluation parent1 = Tournament(rd, Gp.Tsize);
-                        FitnessEvaluation parent2 = Tournament(rd, Gp.Tsize);
-
-                        newind = parent1.Program.Crossover(rd, parent2.Program);
-
-                        //Console.WriteLine("Crossing:\n{0}\nof fitness {1}\nwith {2}\nof fitness {3}\nyields\n{4}", parent1.Program, 
-                        //    parent1.SquaredErrorSum, parent2.Program, parent2.SquaredErrorSum, newind);
+                        index = NegativeTournament(rd, Gp.Tsize, offspring);
                     }
-                    else
-                    {
-                        newind = Tournament(rd, Gp.Tsize).Program.Mutate(rd, Gp._pmutPerNode);
-                    }
-
-                    var offspring = new FitnessEvaluation(newind, _problem);
-                    offspring.Evaluate();
-
-                    int index = NegativeTournament(rd, Gp.Tsize, offspring);
                     this._population[index] = offspring;
-                    OnFitness(offspring);
-                    ++newIndivids;
 
+                    OnFitness(offspring, stringBuilder);
+                    if (stringBuilder.Length > 0)
+                    {
+                        stringBuilder.Insert(0, "\n");
+                        Console.Out.WriteLine(stringBuilder);
+                    }
                 }
             }
+
+            Console.Out.WriteLine($"Finishing evolution of population {_index}");
         }
 
-        public FitnessEvaluation Tournament(Random rd, int tsize)
+        public int Tournament(Random rd, int tsize)
         {
-
-            FitnessEvaluation bestFitness = _population[rd.Next(_population.Count)];
+            int index = rd.Next(_population.Count);
+            FitnessEvaluation bestFitness = _population[index];
             for (int i = 0; i < tsize; ++i)
             {
-                FitnessEvaluation competitor = _population[rd.Next(_population.Count)];
+                int competitorIndex = rd.Next(_population.Count);
+                FitnessEvaluation competitor = _population[competitorIndex];
                 if (competitor.BetterThan(bestFitness))
                 {
                     bestFitness = competitor;
+                    index = competitorIndex;
                 }
             }
 
-            return bestFitness;
+            return index;
         }
 
         public int NegativeTournament(Random rd, int tsize, FitnessEvaluation offspring)

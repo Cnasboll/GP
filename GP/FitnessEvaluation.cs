@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Data;
 using System.Globalization;
 using System.Linq;
+using System.Text;
 using Common;
 
 namespace gp
@@ -40,19 +41,19 @@ namespace gp
 
         public decimal[] Results => _results;
 
-        public void Evaluate()
+        public void Evaluate(StringBuilder stringBuilder)
         {
-            Evaluate(false);
+            Evaluate(false, stringBuilder);
         }
 
-        public void Evaluate(bool printResult)
+        public void Evaluate(bool printResult, StringBuilder stringBuilder)
         {
-            Evaluate(printResult, false);
+            Evaluate(printResult, false, stringBuilder);
         }
 
-        public void Evaluate(bool printResult, bool evaluateUnknownTargets)
+        public void Evaluate(bool printResult, bool evaluateUnknownTargets, StringBuilder stringBuilder)
         {
-            Evaluate(printResult, evaluateUnknownTargets, null);
+            Evaluate(printResult, evaluateUnknownTargets, null, stringBuilder);
         }
 
         bool IsUnknownTarget(int index)
@@ -287,16 +288,17 @@ namespace gp
                                  decimal? expectedResult,
                                  decimal? resultBeforeSimplification,
                                  decimal result,
-                                 bool printResult)
+                                 bool printResult,
+                                 StringBuilder stringBuilder)
         {
             if (printResult || (resultBeforeSimplification != null && resultBeforeSimplification.Value != result))
             {
-                Console.Write("[");
+                stringBuilder.Append("[");
                 for (int i = 0; i < inputs.Length; ++i)
                 {
                     if (i > 0)
                     {
-                        Console.Write(",");
+                        stringBuilder.Append(",");
                     }
                     Console.Write(inputs[i].ToString(CultureInfo.GetCultureInfo("en-GB")
                         .NumberFormat));
@@ -304,11 +306,11 @@ namespace gp
 
                 if (resultBeforeSimplification == null)
                 {
-                    Console.WriteLine("] = {0} expected result = {1}", result,
-                        expectedResult == null
-                            ? "?"
-                            : expectedResult.Value.ToString(CultureInfo.GetCultureInfo("en-GB")
-                                .NumberFormat));
+                    string expectedResultStr = expectedResult == null
+                        ? "?"
+                        : expectedResult.Value.ToString(CultureInfo.GetCultureInfo("en-GB")
+                            .NumberFormat);
+                    stringBuilder.AppendLine($"] = {result} expected result = {expectedResultStr}");
                 }
                 else if (printResult || result != resultBeforeSimplification)
                 {
@@ -323,35 +325,36 @@ namespace gp
             }
         }
 
-        public void PrintAllResults()
+        public void PrintAllResults(StringBuilder stringBuilder)
         {
             for (int targetIndex = 0; targetIndex < _problem.Targets.Count; ++targetIndex)
             {
                 var target = _problem.Targets[targetIndex];
 
                 var expectedResult = target.ExpectedResult;
-                Console.Write("[");
+                stringBuilder.Append("[");
                 for (int i = 0; i < _problem.Varnumber; ++i)
                 {
                     if (i > 0)
                     {
-                        Console.Write(",");
+                        stringBuilder.Append(",");
                     }
 
-                    Console.Write(target[i].ToString(CultureInfo.GetCultureInfo("en-GB")
+                    stringBuilder.Append(target[i].ToString(CultureInfo.GetCultureInfo("en-GB")
                         .NumberFormat));
                 }
 
 
-                Console.WriteLine("] = {0} expected result = {1}", Results[targetIndex],
-                    expectedResult == null
-                        ? "?"
-                        : expectedResult.Value.ToString(CultureInfo.GetCultureInfo("en-GB")
-                            .NumberFormat));
+                string expectedResultStr = expectedResult == null
+                    ? "?"
+                    : expectedResult.Value.ToString(CultureInfo.GetCultureInfo("en-GB")
+                        .NumberFormat);
+                stringBuilder.AppendLine($"] = {Results[targetIndex]} expected result = {expectedResultStr}");
             }
         }
 
-        public void Evaluate(bool printResult, bool evaluateUnknownTargets, decimal[] resultsBeforeSimplification)
+        public void Evaluate(bool printResult, bool evaluateUnknownTargets, decimal[] resultsBeforeSimplification,
+            StringBuilder stringBuilder)
         {
             for (int targetIndex = 0; targetIndex < _problem.Count; ++targetIndex)
             {
@@ -377,7 +380,8 @@ namespace gp
                         _problem[targetIndex].ExpectedResult,
                         resultsBeforeSimplification?[targetIndex],
                         _results[targetIndex],
-                        printResult);
+                        printResult,
+                        stringBuilder);
                 }
             }
         }

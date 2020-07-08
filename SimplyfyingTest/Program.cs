@@ -1,4 +1,6 @@
-﻿using gp;
+﻿using System;
+using System.Text;
+using gp;
 
 namespace SimplyfyingTest
 {
@@ -14,26 +16,23 @@ namespace SimplyfyingTest
             var program = Parser.Parser.Parse(Tokenizer.Tokenizer.Tokenize(code));
 
             var fitness = new FitnessEvaluation(program, problem);
-            while (!fitness.Tick())
-            {
-                
-            }
+            var stringBuilder = new StringBuilder();
+            fitness.Evaluate(stringBuilder);
 
             FitnessEvaluation simplifiedFitness;
             do
             {
-                gp.Program simplifiedProgram = program.Simplify(fitness);
+                gp.Program simplifiedProgram = program.Simplify(fitness, stringBuilder);
                 if (simplifiedProgram == null || simplifiedProgram.ToString() == program.ToString())
                 {
                     break;
                 }
                 simplifiedFitness = new FitnessEvaluation(simplifiedProgram, problem);
-                while (!simplifiedFitness.Tick(false))
-                {
-
-                }
+                simplifiedFitness.Evaluate(false, stringBuilder);
                 program = simplifiedProgram;
             } while (fitness.ErrorSum == simplifiedFitness.ErrorSum);
+
+            Console.Out.Write(stringBuilder);
         }
     }
 }

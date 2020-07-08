@@ -102,7 +102,7 @@ namespace Common
 
         static int MutateInteger(Random rd, INormalDistribution normalDistribution, int literal)
         {
-            return (int)Math.Round(literal * normalDistribution.Next(rd, 1.0m, 0.25m));
+            return (int)Math.Round(literal * normalDistribution.Next(rd, 1.0, 0.25));
         }
 
         public int PickDoubleConstant(Random rd)
@@ -147,7 +147,7 @@ namespace Common
 
         static decimal MutateDouble(Random rd, INormalDistribution normalDistribution, decimal constant)
         {
-            return constant * normalDistribution.Next(rd, 1.0m, 0.25m);
+            return constant * (decimal)normalDistribution.Next(rd, 1.0, 0.25);
         }
 
         public ConstantsSet Merge(ConstantsSet constants, out IList<int> integerRhs2MergedMapping, out IList<int> doubleRhs2MergedMapping)
