@@ -5,6 +5,8 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using log4net;
+using log4net.Config;
 
 namespace gp
 {
@@ -23,10 +25,13 @@ namespace gp
         public static readonly double
             _pmutPerNode = 0.05;
 
+        private static readonly ILog Log = LogManager.GetLogger(typeof(Gp));
+
         public static void Main(String[] args)
         {
             try
             {
+                XmlConfigurator.Configure();
                 var problem = Problem.Read(args[0]);
 
                 var rd = new Random();
@@ -62,27 +67,28 @@ namespace gp
             }
             catch (FileNotFoundException)
             {
-                Console.Write("ERROR: Please provide a data file");
+                Log.Error("ERROR: Please provide a data file");
             }
             /*catch (Exception e)
             {
                 Console.Write("ERROR: Incorrect data format");
             }*/
-            Console.In.Read();
         }
 
 
         static void Evolve(Population pop, Random rd, CancellationToken token,
             ConcurrentQueue<FitnessEvaluation>[] migrationQueues)
         {
-            try
+            while (!pop.Solved && !token.IsCancellationRequested)
             {
-                pop.Evolve(rd, token, migrationQueues);
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine($"Failed to evolve population {pop.Index}", e);
-                throw;
+                try
+                {
+                    pop.Evolve(rd, token, migrationQueues);
+                }
+                catch (Exception e)
+                {
+                    Log.Error($"Failed to evolve population {pop.Index}", e);
+                }
             }
         }
     }

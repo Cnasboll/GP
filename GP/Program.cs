@@ -898,7 +898,7 @@ namespace gp
             do
             {
                 callTree.Reset();
-                simplifiedCallTree = callTree.Simplify(constantsSet, fitnessEvaluation != null);
+                simplifiedCallTree = callTree.Simplify(constantsSet, fitnessEvaluation != null ? stringBuilder : null);
                 if (fitnessEvaluation != null && simplifiedCallTree != null)
                 {
                     stringBuilder.AppendLine("After removing redundant code:");
@@ -914,7 +914,7 @@ namespace gp
                 }
                 CallTree tmpCallTree =
                     (simplifiedCallTree ?? callTree).PurgeUnassignedVariables(constantsSet,
-                                                                              new List<int>());
+                                                                              new List<int>(), stringBuilder);
 
                 if (tmpCallTree != null)
                 {
@@ -934,7 +934,7 @@ namespace gp
                 }
 
                 tmpCallTree =
-                    (simplifiedCallTree ?? callTree).PurgeUnusedAssignmentsToVariables(constantsSet, new List<int>());
+                    (simplifiedCallTree ?? callTree).PurgeUnusedAssignmentsToVariables(constantsSet, new List<int>(), stringBuilder);
 
                 if (tmpCallTree != null)
                 {

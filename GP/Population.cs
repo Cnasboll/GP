@@ -2,9 +2,9 @@
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using System.Threading;
+using log4net;
 
 namespace gp
 {
@@ -18,12 +18,14 @@ namespace gp
         
         private bool _solved;
 
+        private static readonly ILog Log = LogManager.GetLogger(typeof(Population));
+
         public Population(Random rd, int depth, Problem problem, int index)
         {
             _problem = problem;
             _index = index;
             _population = new List<FitnessEvaluation>();
-            Console.Out.WriteLine($"Creating initial population {index}");
+            Log.Info($"Creating initial population {index}");
             for (int i = 0; !_solved && i < Gp.Popsize; ++i)
             {
                 Add(new FitnessEvaluation(new Program(rd, depth, problem.Varnumber), problem));
@@ -56,7 +58,7 @@ namespace gp
             if (stringBuilder.Length > 0)
             {
                 stringBuilder.Insert(0, "\n");
-                Console.Out.WriteLine(stringBuilder);
+                Log.Debug(stringBuilder);
             }
         }
 
@@ -156,6 +158,8 @@ namespace gp
 
                 simplifiedFitnessEvaluation.Evaluate((true), stringBuilder);
 
+                System.IO.File.WriteAllText($"unsimplified_program_{Guid.NewGuid()}.txt", fitnessEvaluation.Program.ToString());
+
             }
 
             return simplifiedProgram;
@@ -166,14 +170,14 @@ namespace gp
 
             if (!_solved)
             {
-                Console.WriteLine($"Commencing evolutionary process of population {_index}");
+                Log.Debug($"Commencing evolutionary process of population {_index}");
             }
 
             int generation = 0;
             int maxMigrationQIndex = migrationQueues.Length - 1;
             while (!_solved && !token.IsCancellationRequested)
             {
-                Console.Out.WriteLine($"Evolving generation {++generation} of population {_index}");
+                Log.Debug($"Evolving generation {++generation} of population {_index}");
                 for (int newIndivids = 0; !_solved && !token.IsCancellationRequested && newIndivids < Gp.Popsize; ++newIndivids)
                 {
                     var stringBuilder = new StringBuilder();
@@ -224,12 +228,12 @@ namespace gp
                     if (stringBuilder.Length > 0)
                     {
                         stringBuilder.Insert(0, "\n");
-                        Console.Out.WriteLine(stringBuilder);
+                        Log.Info(stringBuilder);
                     }
                 }
             }
 
-            Console.Out.WriteLine($"Finishing evolution of population {_index}");
+            Log.Info($"Finishing evolution of population {_index}");
         }
 
         public int Tournament(Random rd, int tsize)

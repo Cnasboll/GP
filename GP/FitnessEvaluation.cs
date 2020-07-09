@@ -300,27 +300,22 @@ namespace gp
                     {
                         stringBuilder.Append(",");
                     }
-                    Console.Write(inputs[i].ToString(CultureInfo.GetCultureInfo("en-GB")
+                    stringBuilder.Append(inputs[i].ToString(CultureInfo.GetCultureInfo("en-GB")
                         .NumberFormat));
                 }
 
+                string expectedResultStr = expectedResult == null
+                    ? "?"
+                    : expectedResult.Value.ToString(CultureInfo.GetCultureInfo("en-GB")
+                        .NumberFormat);
+
                 if (resultBeforeSimplification == null)
                 {
-                    string expectedResultStr = expectedResult == null
-                        ? "?"
-                        : expectedResult.Value.ToString(CultureInfo.GetCultureInfo("en-GB")
-                            .NumberFormat);
                     stringBuilder.AppendLine($"] = {result} expected result = {expectedResultStr}");
                 }
                 else if (printResult || result != resultBeforeSimplification)
                 {
-                    Console.WriteLine("] = {0} but before simplification = {1}, expected result = {2}",
-                        result,
-                        resultBeforeSimplification,
-                        expectedResult == null
-                            ? "?"
-                            : expectedResult.Value.ToString(CultureInfo.GetCultureInfo("en-GB")
-                                .NumberFormat));
+                    stringBuilder.AppendLine($"] = {result} but before simplification = {resultBeforeSimplification}, expected result = {expectedResultStr}");
                 }
             }
         }

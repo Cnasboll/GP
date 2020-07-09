@@ -20,12 +20,12 @@ namespace Debugger
 
             CallTree.PrintDebugInfo = true;
 
-
-            Console.WriteLine("Running {0}", code);
-            RunProgram(code, argument);
+            var stringBuilder = new StringBuilder($"Running {code}");
+            RunProgram(code, argument, stringBuilder);
+            Console.Out.WriteLine(stringBuilder);
         }
 
-        static void RunProgram(string code, decimal input)
+        static void RunProgram(string code, decimal input, StringBuilder stringBuilder)
         {
             var program = Parser.Parser.Parse(Tokenizer.Tokenizer.Tokenize(code));
 
@@ -34,7 +34,7 @@ namespace Debugger
             int pc = 0;
             var callTree = new CallTree(program, ref pc);
 
-            while (!callTree.Tick(runTimeState, program.Constants))
+            while (!callTree.Tick(runTimeState, program.Constants, stringBuilder))
             {
 
             }

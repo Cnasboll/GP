@@ -1,12 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Text;
 using Common;
+using log4net;
 
 namespace gp
 {
     public class CallTree
     {
+        private static readonly ILog Log = LogManager.GetLogger(typeof(CallTree));
         private const PossibleSign AllSigns =
             PossibleSign.Positive | PossibleSign.Negative | PossibleSign.Zero;
 
@@ -341,7 +344,7 @@ namespace gp
         /// <summary>
         /// For commutative operations the program will maintain the exact same meaning if we swap RHS with LHS if both lack side effects.
         /// If ONLY RHS has side effects swapping will maintain semantics if at least one side is but symbol cannot be short circuited
-        /// i.e. being neither OR or AND, so both sides were already guaranteed to be evalued but the evaluation of LHS cannot affect the result of RHS.        
+        /// i.e. being neither OR or AND, so both sides were already guaranteed to be evaluated but the evaluation of LHS cannot affect the result of RHS.        
         /// </summary>
         private bool IsSemanticallyCommutative
         {
@@ -722,10 +725,10 @@ namespace gp
             return 0;
         }
 
-        private bool TickNextConditionalChild(RuntimeState runtimeState, ConstantsSet constants, ref decimal result)
+        private bool TickNextConditionalChild(RuntimeState runtimeState, ConstantsSet constants, ref decimal result, StringBuilder stringBuilder)
         {
             CallTree conditionalChild;
-            if (TickNextConditionalChild(runtimeState, constants, out conditionalChild))
+            if (TickNextConditionalChild(runtimeState, constants, out conditionalChild, stringBuilder))
             {
                 if (conditionalChild != null)
                 {
@@ -737,14 +740,16 @@ namespace gp
             return false;
         }
 
-        private bool TickNextConditionalChild(RuntimeState runtimeState, ConstantsSet constants,
-                                              out CallTree conditionalChild)
+        private bool TickNextConditionalChild(RuntimeState runtimeState,
+                                              ConstantsSet constants,
+                                              out CallTree conditionalChild,
+                                              StringBuilder stringBuilder)
         {
             if (_conditionalChildrenIndex < _conditionalChildren.Length)
             {
                 conditionalChild = _conditionalChildren[_conditionalChildrenIndex];
 
-                if (conditionalChild.Tick(runtimeState, constants))
+                if (conditionalChild.Tick(runtimeState, constants, stringBuilder))
                 {
                     ++_conditionalChildrenIndex;
                 }
@@ -760,43 +765,43 @@ namespace gp
             return true;
         }
 
-        private bool Tick(ConstantsSet constants)
+        private bool Tick(ConstantsSet constants, StringBuilder stringBuilder)
         {
-            return Tick(null, constants);
+            return Tick(null, constants, stringBuilder);
         }
 
-        public bool Tick(RuntimeState runtimeState, ConstantsSet constants)
+        public bool Tick(RuntimeState runtimeState, ConstantsSet constants, StringBuilder stringBuilder)
         {
             if (this._evaluated)
             {
                 return true;
             }
 
-            this._evaluated = TickImpl(runtimeState, constants);
+            this._evaluated = TickImpl(runtimeState, constants, stringBuilder);
             if (PrintDebugInfo && this._evaluated)
             {
-                Console.WriteLine("_symbol: {0} SyntacticArity: {1}, Result = {2}, _preEvaluatedArgs:", _symbol, Program.GetSyntacticArity(_symbol), Result);
+                stringBuilder?.AppendLine($"_symbol: {_sign} SyntacticArity: {Program.GetSyntacticArity(_symbol)}, Result = {Result}, _preEvaluatedArgs:");
                 foreach (var arg in this._preEvaluatedArgs)
                 {
-                    Console.WriteLine(arg.Result);
+                    stringBuilder?.AppendLine($"{arg.Result}");
                 }
-                Console.WriteLine("============================================");
+                stringBuilder?.AppendLine("============================================");
             }
             if (this._evaluated && IsBoolean)
             {
                 if (Result != 0.0m && Result != 1.0m)
                 {
-                    Console.WriteLine("Boolean expression rendered {0}", Result);
+                    stringBuilder?.AppendLine($"Boolean expression rendered {Result}");
                 }
             }
             return this._evaluated;
         }
 
-        private bool TickImpl(RuntimeState runtimeState, ConstantsSet constants)
+        private bool TickImpl(RuntimeState runtimeState, ConstantsSet constants, StringBuilder stringBuilder)
         {
             for (; _preEvaluatedArgIndex < _preEvaluatedArgs.Length; ++_preEvaluatedArgIndex)
             {
-                if (!_preEvaluatedArgs[_preEvaluatedArgIndex].Tick(runtimeState, constants))
+                if (!_preEvaluatedArgs[_preEvaluatedArgIndex].Tick(runtimeState, constants, stringBuilder))
                 {
                     //We have still not evaluated all arguments.
                     return false;
@@ -923,7 +928,7 @@ namespace gp
                         }
 
                         CallTree conditionalChild;
-                        if (TickNextConditionalChild(runtimeState, constants, out conditionalChild))
+                        if (TickNextConditionalChild(runtimeState, constants, out conditionalChild, stringBuilder))
                         {
                             if (conditionalChild != null)
                             {
@@ -942,7 +947,7 @@ namespace gp
                         }
 
                         CallTree conditionalChild;
-                        if (TickNextConditionalChild(runtimeState, constants, out conditionalChild))
+                        if (TickNextConditionalChild(runtimeState, constants, out conditionalChild, stringBuilder))
                         {
                             if (conditionalChild != null)
                             {
@@ -971,14 +976,14 @@ namespace gp
                             _conditionalChildrenIndex = _conditionalChildren.Length;
                         }
                         //Evaluate and return the yes branch
-                        return TickNextConditionalChild(runtimeState, constants, ref _result);
+                        return TickNextConditionalChild(runtimeState, constants, ref _result, stringBuilder);
                     }
                 case Symbols.While:
                     {
                         if (_conditionalChildrenIndex == 0)
                         {
                             CallTree conditionalChild;
-                            if (TickNextConditionalChild(runtimeState, constants, out conditionalChild))
+                            if (TickNextConditionalChild(runtimeState, constants, out conditionalChild, stringBuilder))
                             {
                                 if (!conditionalChild.Bresult)
                                 {
@@ -991,7 +996,7 @@ namespace gp
                         if (_conditionalChildrenIndex == 1)
                         {
                             //If the body is fully evaluated, we store the last result.
-                            if (TickNextConditionalChild(runtimeState, constants, ref _result))
+                            if (TickNextConditionalChild(runtimeState, constants, ref _result, stringBuilder))
                             {
                                 //..and reset the conditional children so that the guard expression will be evaluated again.
                                 ResetConditionalChildren();
@@ -1030,7 +1035,7 @@ namespace gp
                         }
 
                         //Evaluate and return the selected branch (0 for yes, 1 for no)
-                        if (TickNextConditionalChild(runtimeState, constants, ref _result))
+                        if (TickNextConditionalChild(runtimeState, constants, ref _result, stringBuilder))
                         {
                             //We guarantee to evaluate at mostly one.
                             _conditionalChildrenIndex = _conditionalChildren.Length;
@@ -1078,17 +1083,17 @@ namespace gp
             _preEvaluatedArgIndex = 0;
         }
 
-        private bool EvaluateConstantArguments(ConstantsSet constants)
+        private bool EvaluateConstantArguments(ConstantsSet constants, StringBuilder stringBuilder)
         {
-            bool hasPreEvaluedConstant = false;
+            bool hasPreEvaluatedConstant = false;
             foreach (CallTree callTree in _preEvaluatedArgs)
             {
                 if (callTree.IsConstant)
                 {
-                    hasPreEvaluedConstant = true;
-                    if (!callTree.Tick(constants))
+                    hasPreEvaluatedConstant = true;
+                    if (!callTree.Tick(constants, stringBuilder))
                     {
-                        throw new InvalidOperationException("Ticking pre-evalued constant but Tick returns false");
+                        throw new InvalidOperationException("Ticking pre-evaluated constant but Tick returns false");
                     }
                 }
             }
@@ -1096,31 +1101,26 @@ namespace gp
             {
                 if (callTree.IsConstant)
                 {
-                    hasPreEvaluedConstant = true;
-                    if (!callTree.Tick(constants))
+                    hasPreEvaluatedConstant = true;
+                    if (!callTree.Tick(constants, stringBuilder))
                     {
                         throw new InvalidOperationException("Ticking conditional constant but Tick returns false");
                     }
                 }
             }
-            return hasPreEvaluedConstant;
+            return hasPreEvaluatedConstant;
         }
 
-        public CallTree Simplify(ConstantsSet constants)
+        public CallTree Simplify(ConstantsSet constants, StringBuilder stringBuilder = null)
         {
-            return Simplify(constants, false);
-        }
-
-        public CallTree Simplify(ConstantsSet constants, bool trace)
-        {
-            var callTree = SimplifyConstant(constants, trace);
+            var callTree = SimplifyConstant(constants, stringBuilder);
 
             if (callTree != null)
             {
                 return callTree;
             }
 
-            callTree = ReplaceAssignmentToSelfOrNoopWithVariable(trace);
+            callTree = ReplaceAssignmentToSelfOrNoopWithVariable(stringBuilder);
 
             if (callTree != null)
             {
@@ -1128,10 +1128,10 @@ namespace gp
                 return callTree;
             }
 
-            bool hasAtLeastOneConstantArgument = EvaluateConstantArguments(constants);
+            bool hasAtLeastOneConstantArgument = EvaluateConstantArguments(constants, stringBuilder);
             if (hasAtLeastOneConstantArgument)
             {
-                callTree = ReplaceExpressionWithConstant(constants, trace);
+                callTree = ReplaceExpressionWithConstant(constants, stringBuilder);
                 if (callTree != null)
                 {
                     //All children were constants. Replace with constant expression.
@@ -1140,21 +1140,21 @@ namespace gp
                 }
             }
 
-            callTree = SimplifyPreEvaluatedArgs(constants, trace);
+            callTree = SimplifyPreEvaluatedArgs(constants, stringBuilder);
             if (callTree != null)
             {
                 //We managed to simplify one of the pre evaluated children.
                 return callTree;
             }
 
-            callTree = SimplifyConditionalChildren(constants, trace);
+            callTree = SimplifyConditionalChildren(constants, stringBuilder);
             if (callTree != null)
             {
                 //we managed to simplify one of the conditional children.
                 return callTree;
             }
 
-            callTree = ReplaceWithConstantDueToRhslhsEquivalence(constants, trace);
+            callTree = ReplaceWithConstantDueToRhslhsEquivalence(constants, stringBuilder);
             if (callTree != null)
             {
                 //we managed to replace equality with constant as the code was identical of each side,
@@ -1162,7 +1162,7 @@ namespace gp
                 return callTree;
             }
 
-            callTree = ReplaceSymmetricTernaryOperatorWithChain(constants, trace);
+            callTree = ReplaceSymmetricTernaryOperatorWithChain(constants, stringBuilder);
             if (callTree != null)
             {
                 //We managed to replace an IF THEN ELSE statement with a chain as the code in both
@@ -1170,14 +1170,14 @@ namespace gp
                 return callTree;
             }
 
-            callTree = ReplaceLhsWithoutSideEffectsInChainWithLhs(trace);
+            callTree = ReplaceLhsWithoutSideEffectsInChainWithLhs(stringBuilder);
             if (callTree != null)
             {
                 //Here x <> 7 => Y was replaced with 7 as x <> 7 has no side effects.
                 return callTree;
             }
 
-            callTree = SimplifyNegatedExpression(constants, trace);
+            callTree = SimplifyNegatedExpression(constants, stringBuilder);
             if (callTree != null)
             {
                 //Here NOT(x = y) was replaced with x<>y.
@@ -1191,13 +1191,13 @@ namespace gp
             }
 
             //At least one argument is constant.
-            callTree = CommutativeMoveSinglyConstOperandFromRhStoLhs(trace);
+            callTree = CommutativeMoveSinglyConstOperandFromRhStoLhs(stringBuilder);
             if (callTree != null)
             {
                 //For commutative expressions where only RHS is constant move it to LHS
                 //so (x+3) => (3+x).
                 //Call simplify recursively to see if the normalisation actually has any effect.
-                CallTree simplifiedCallTree = callTree.Simplify(constants, trace);
+                CallTree simplifiedCallTree = callTree.Simplify(constants, stringBuilder);
                 if (simplifiedCallTree != null)
                 {
                     callTree = simplifiedCallTree;
@@ -1205,7 +1205,7 @@ namespace gp
                 return callTree;
             }
 
-            callTree = GroupConstantsTogetherInAssociativeChain(trace);
+            callTree = GroupConstantsTogetherInAssociativeChain(stringBuilder);
             if (callTree != null)
             {
                 //For associative expressions where LHS is constant and RHS consit of constant LHS but nonconst RHS, move the
@@ -1214,7 +1214,7 @@ namespace gp
                 //next iteration. Note that ((x+3)+3) was first replaced with ((3+x)+3) using
                 //CommutativeMoveSinglyConstOperandFromRhStoLhs and then (3+(3+x)) using the same rule.
                 //Call simplify recursively to see if the normalisation actually has any effect.
-                CallTree simplifiedCallTree = callTree.Simplify(constants, trace);
+                CallTree simplifiedCallTree = callTree.Simplify(constants, stringBuilder);
                 if (simplifiedCallTree != null)
                 {
                     callTree = simplifiedCallTree;
@@ -1222,7 +1222,7 @@ namespace gp
                 return callTree;
             }
 
-            callTree = ReplaceTernaryIfWithNoopBranchWithBinaryIf(trace);
+            callTree = ReplaceTernaryIfWithNoopBranchWithBinaryIf(stringBuilder);
             if (callTree != null)
             {
                 //In the IF THEN ELSE statement one alternative was NOOP so we replace this with I.F THEN instead,
@@ -1230,20 +1230,20 @@ namespace gp
                 return callTree;
             }
 
-            callTree = SimplifyArithmeticExpression(constants, trace);
+            callTree = SimplifyArithmeticExpression(constants, stringBuilder);
             if (callTree != null)
             {
                 //1*exp => exp; 0+exp=>exp
                 return callTree;
             }
 
-            callTree = SimplifyRelationalExpression(constants, trace);
+            callTree = SimplifyRelationalExpression(constants, stringBuilder);
             if (callTree != null)
             {
                 return callTree;
             }
 
-            callTree = SimplifyDisjunctionAndConjunction(constants, trace);
+            callTree = SimplifyDisjunctionAndConjunction(constants, stringBuilder);
             if (callTree != null)
             {
                 //true AND exp becomes exp<>0
@@ -1254,14 +1254,14 @@ namespace gp
             }
 
 
-            callTree = ReplaceSubtractionWithConstantWithAdditionToNegative(constants, trace);
+            callTree = ReplaceSubtractionWithConstantWithAdditionToNegative(constants, stringBuilder);
             if (callTree != null)
             {
                 //exp-constant => -constant+exp
                 return callTree;
             }
 
-            callTree = SimplifyConditionalEvaluation(trace);
+            callTree = SimplifyConditionalEvaluation(stringBuilder);
             if (callTree != null)
             {
                 return callTree;
@@ -1269,12 +1269,12 @@ namespace gp
             return null;
         }
 
-        private CallTree SimplifyConstant(ConstantsSet constants, bool trace)
+        private CallTree SimplifyConstant(ConstantsSet constants, StringBuilder stringBuilder)
         {
             if (IsConstant)
             {
                 //Cannot be further simplified
-                if (!Tick(constants))
+                if (!Tick(constants, stringBuilder))
                 {
                     throw new InvalidOperationException("CallTree IsConstant but Tick() returns false");
                 }
@@ -1283,10 +1283,7 @@ namespace gp
                 {
                     if (Result == Math.Floor(Result))
                     {
-                        if (trace)
-                        {
-                            Console.Out.WriteLine("Replacing double {0} with integer", Result);
-                        }
+                        stringBuilder?.AppendLine($"Replacing double {Result} with integer");
                         return CreateConstantCallTree((int) Result, constants);
                     }
                 }
@@ -1294,7 +1291,7 @@ namespace gp
             return null;
         }
 
-        private CallTree SimplifyRelationalExpression(ConstantsSet constants, bool trace)
+        private CallTree SimplifyRelationalExpression(ConstantsSet constants, StringBuilder stringBuilder)
         {
             CallTree callTree = null;
             if (IsRelational)
@@ -1306,16 +1303,16 @@ namespace gp
                 }
 
                 Symbols symbol = _symbol;
-                callTree = SimplifyRelationalExpression(constants, symbol, Lhs, Rhs, trace);
+                callTree = SimplifyRelationalExpression(constants, symbol, Lhs, Rhs, stringBuilder);
                 ReorderRelationOperator(ref symbol);
-                callTree = callTree ?? SimplifyRelationalExpression(constants, symbol, Rhs, Lhs, trace);
+                callTree = callTree ?? SimplifyRelationalExpression(constants, symbol, Rhs, Lhs, stringBuilder);
             }
             return callTree;
         }
 
 
         private CallTree SimplifyRelationalExpression(ConstantsSet constants, Symbols symbol, CallTree lhs,
-                                                      CallTree rhs, bool trace)
+                                                      CallTree rhs, StringBuilder stringBuilder)
         {
             if (rhs.IsBoolean)
             {
@@ -1328,18 +1325,12 @@ namespace gp
                             case Symbols.Eq:
                             case Symbols.Lt:
                             case Symbols.Lteq:
-                                if (trace)
-                                {
-                                    Console.WriteLine("Replacing constant above 1 = | < | <= bool expression with false");
-                                }
+                                stringBuilder?.AppendLine("Replacing constant above 1 = | < | <= bool expression with false");
                                 return CreateChain(constants, rhs, false);
                             case Symbols.Gt:
                             case Symbols.Gteq:
                             case Symbols.Neq:
-                                if (trace)
-                                {
-                                    Console.WriteLine("Replacing constant above 1 <> | > | >= bool expression with true");
-                                }
+                                stringBuilder?.AppendLine("Replacing constant above 1 <> | > | >= bool expression with true");
                                 return CreateChain(constants, rhs, true);
                         }
                     }
@@ -1349,33 +1340,18 @@ namespace gp
                         switch (symbol)
                         {
                             case Symbols.Eq:
-                                if (trace)
-                                {
-                                    Console.WriteLine(
-                                        "Replacing constant above 0 but less than 1 = bool expression with false");
-                                }
+                                stringBuilder?.AppendLine("Replacing constant above 0 but less than 1 = bool expression with false");
                                 return CreateChain(constants, rhs, false);
                             case Symbols.Gt:
                             case Symbols.Gteq:
-                                if (trace)
-                                {
-                                    Console.WriteLine(
-                                        "Replacing constant above 0 but less than 0 >|>= bool expression with negation of the bool expression");
-                                }
+                                stringBuilder?.AppendLine("Replacing constant above 0 but less than 0 >|>= bool expression with negation of the bool expression");
                                 return rhs.WrapExpressionInNegation();
                             case Symbols.Lt:
                             case Symbols.Lteq:
-                                if (trace)
-                                {
-                                    Console.WriteLine(
-                                        "Replacing constant above 0 but less than 0 <|<= bool experssion with the bool expression");
-                                }
+                                stringBuilder?.AppendLine("Replacing constant above 0 but less than 0 <|<= bool experssion with the bool expression");
                                 return rhs;
                             case Symbols.Neq:
-                                if (trace)
-                                {
-                                    Console.WriteLine("Replacing constant above 0 but less than 0 <> bool with true");
-                                }
+                                stringBuilder?.AppendLine("Replacing constant above 0 but less than 0 <> bool with true");
                                 return CreateChain(constants, rhs, true);
                         }
                     }
@@ -1385,30 +1361,17 @@ namespace gp
                         {
                             case Symbols.Eq:
                             case Symbols.Lteq:
-                                if (trace)
-                                {
-                                    Console.WriteLine("Replacing 1 = or <= bool with the bool");
-                                }
+                                stringBuilder?.AppendLine("Replacing 1 = or <= bool with the bool");
                                 return rhs;
                             case Symbols.Gt:
                             case Symbols.Neq:
-                                if (trace)
-                                {
-                                    Console.WriteLine(
-                                        "Replacing 1 > or >= bool with the negation of the bool expression");
-                                }
+                                stringBuilder?.AppendLine("Replacing 1 > or >= bool with the negation of the bool expression");
                                 return rhs.WrapExpressionInNegation();
                             case Symbols.Lt:
-                                if (trace)
-                                {
-                                    Console.WriteLine("Replacing 1 < bool expression with false");
-                                }
+                                stringBuilder?.AppendLine("Replacing 1 < bool expression with false");
                                 return CreateChain(constants, rhs, false);
                             case Symbols.Gteq:
-                                if (trace)
-                                {
-                                    Console.WriteLine("Replacing 1 >= bool expression with true");
-                                }
+                                stringBuilder?.AppendLine("Replacing 1 >= bool expression with true");
                                 return CreateChain(constants, rhs, true);
                         }
                     }
@@ -1420,18 +1383,12 @@ namespace gp
                         case Symbols.Eq:
                         case Symbols.Gt:
                         case Symbols.Gteq:
-                            if (trace)
-                            {
-                                Console.WriteLine("Replacing -const =  | > | >= bool expression with false");
-                            }
+                            stringBuilder?.AppendLine("Replacing -const =  | > | >= bool expression with false");
                             return CreateChain(constants, rhs, false);
                         case Symbols.Neq:
                         case Symbols.Lt:
                         case Symbols.Lteq:
-                            if (trace)
-                            {
-                                Console.WriteLine("Replacing -const <>  | < | <= bool expression with true");
-                            }
+                            stringBuilder?.AppendLine("Replacing -const <>  | < | <= bool expression with true");
                             return CreateChain(constants, rhs, true);
                     }
                 }
@@ -1441,30 +1398,17 @@ namespace gp
                     {
                         case Symbols.Eq:
                         case Symbols.Gteq:
-                            if (trace)
-                            {
-                                Console.WriteLine(
-                                    "Replacing 0 = | >= bool expression negation of the boolean expression");
-                            }
+                            stringBuilder?.AppendLine("Replacing 0 = | >= bool expression negation of the boolean expression");
                             return rhs.WrapExpressionInNegation();
                         case Symbols.Gt:
-                            if (trace)
-                            {
-                                Console.WriteLine("Replacing 0 > bool expression with false");
-                            }
+                            stringBuilder?.AppendLine("Replacing 0 > bool expression with false");
                             return CreateChain(constants, rhs, false);
                         case Symbols.Lteq:
-                            if (trace)
-                            {
-                                Console.WriteLine("Replacing 0 <= bool expression with true");
-                            }
+                            stringBuilder?.AppendLine("Replacing 0 <= bool expression with true");
                             return CreateChain(constants, rhs, true);
                         case Symbols.Neq:
                         case Symbols.Lt:
-                            if (trace)
-                            {
-                                Console.WriteLine("Replacing 0 <> | 0 <  bool expression with the bool expression");
-                            }
+                            stringBuilder?.AppendLine("Replacing 0 <> | 0 <  bool expression with the bool expression");
                             return rhs;
                     }
                 }
@@ -1472,7 +1416,7 @@ namespace gp
             return null;
         }
 
-        private CallTree SimplifyNegatedExpression(ConstantsSet constants, bool trace)
+        private CallTree SimplifyNegatedExpression(ConstantsSet constants, StringBuilder stringBuilder)
         {
             if (_symbol == Symbols.Not)
             {
@@ -1480,30 +1424,22 @@ namespace gp
                 {
                     //Double negation
                     //not(not exp) => exp if exp is boolean, else it becomes 0 <> exp or 1 or 0 if exp was a constant
-                    if (trace)
-                    {
-                        Console.WriteLine("Replacing NOT(NOT(exp)) with exp<>0");
-                    }
-                    return Operand.Operand.LimitToZerOrOne(constants, trace);
+                    stringBuilder?.AppendLine("Replacing NOT(NOT(exp)) with exp<>0");
+                    return Operand.Operand.LimitToZerOrOne(constants, stringBuilder);
                 }
 
                 Symbols negatedSymbol = Operand._symbol;
                 if (negatedSymbol == Symbols.Xor && Operand.Lhs.IsBoolean && Operand.Rhs.IsBoolean)
                 {
                     //We interpret Xor as Neq here for two booleans so the result of negation will be Eq.
-                    if (trace)
-                    {
-                        Console.WriteLine("Replacing boolexp1 XOR boolexp2 with boolexp1 <> boolexp2");
-                    }
+                    stringBuilder?.AppendLine("Replacing boolexp1 XOR boolexp2 with boolexp1 <> boolexp2");
                     negatedSymbol = Symbols.Neq;
                 }
 
                 if (NegateRelationalOperator(ref negatedSymbol))
                 {
-                    if (trace)
-                    {
-                        Console.WriteLine("Replacing NOT(exp1 RELOP exp2) with exp1 Inverse_relop exp2");
-                    }
+
+                    stringBuilder?.AppendLine("Replacing NOT(exp1 RELOP exp2) with exp1 Inverse_relop exp2");
                     return CreateBinaryCalltree(negatedSymbol, Operand.Lhs,
                                                 Operand.Rhs);
                 }
@@ -1512,11 +1448,9 @@ namespace gp
                 {
                     //NOT(NOT a AND NOT b) => a OR b
                     //NOT(NOT a OR NOT b) => a AND b
-                    if (trace)
-                    {
-                        Console.WriteLine(
-                            "Replacing negated AND or OR expression having two negated terms with opposite operator.");
-                    }
+
+                    stringBuilder?.AppendLine(
+                        "Replacing negated AND or OR expression having two negated terms with opposite operator.");
                     return
                         CreateBinaryCalltree(
                             negatedSymbol == Symbols.And ? Symbols.Or : Symbols.And,
@@ -1579,7 +1513,7 @@ namespace gp
             }
         }
 
-        private CallTree SimplifyDisjunctionAndConjunction(ConstantsSet constants, bool trace)
+        private CallTree SimplifyDisjunctionAndConjunction(ConstantsSet constants, StringBuilder stringBuilder)
         {
             if ((_symbol == Symbols.And || _symbol == Symbols.Or || _symbol == Symbols.Xor))
             {
@@ -1590,22 +1524,17 @@ namespace gp
                     {
                         //true XOR exp => NOT(exp)
                         //false XOR exp => exp <> 0
-                        if (trace)
-                        {
-                            Console.WriteLine(
-                                "Replacing true XOR exp with NOT(exp) or replacing false XOR exp with exp<>0");
-                        }
-                        return lhs ? Rhs.WrapExpressionInNegation() : Rhs.LimitToZerOrOne(constants, trace);
+                        stringBuilder?.AppendLine(
+                            "Replacing true XOR exp with NOT(exp) or replacing false XOR exp with exp<>0");
+                        return lhs ? Rhs.WrapExpressionInNegation() : Rhs.LimitToZerOrOne(constants, stringBuilder);
                     }
                     if (((_symbol == Symbols.And && !lhs) || (_symbol == Symbols.Or && lhs)))
                     {
                         //We can eliminate RHS as it would never have been evaluated (short circuit).
                         //(false AND exp) => false
                         //(true OR exp) => true
-                        if (trace)
-                        {
-                            Console.WriteLine("Replacing false AND exp with false or relacing true OR exp with true");
-                        }
+                        stringBuilder?.AppendLine(
+                            "Replacing false AND exp with false or relacing true OR exp with true");
                         return CreateConstantCallTree(lhs, constants);
                     }
 
@@ -1614,11 +1543,8 @@ namespace gp
                         //We can eliminate the constant LHS term and convert RHS to a boolean expression.
                         //(true AND exp) => (exp <> 0)
                         //false OR exp) => (exp <> 0)
-                        if (trace)
-                        {
-                            Console.WriteLine("Replacing true AND exp or false OR exp with exp <> 0");
-                        }
-                        return Rhs.LimitToZerOrOne(constants, trace);
+                        stringBuilder?.AppendLine("Replacing true AND exp or false OR exp with exp <> 0");
+                        return Rhs.LimitToZerOrOne(constants, stringBuilder);
                     }
                 }
 
@@ -1629,12 +1555,9 @@ namespace gp
                     {
                         //exp XOR true => NOT(exp)
                         //exp XOR false => exp <> 0
-                        if (trace)
-                        {
-                            Console.WriteLine(
-                                "Replacing exp XOR true XOR with NOT(exp) or replacing exp XOR false with exp<>0");
-                        }
-                        return rhs ? Lhs.WrapExpressionInNegation() : Lhs.LimitToZerOrOne(constants, trace);
+                        stringBuilder?.AppendLine(
+                            "Replacing exp XOR true XOR with NOT(exp) or replacing exp XOR false with exp<>0");
+                        return rhs ? Lhs.WrapExpressionInNegation() : Lhs.LimitToZerOrOne(constants, stringBuilder);
                     }
                     if (((_symbol == Symbols.And && !rhs) || (_symbol == Symbols.Or && rhs)))
                     {
@@ -1642,10 +1565,8 @@ namespace gp
                         //(If LHS lacks side effects it might be removed later according to ReplaceLhsWithoutSideEffectsInChainWithLhs())
                         //(exp AND false) => (exp;false)
                         //(exp OR true) => (exp;true)
-                        if (trace)
-                        {
-                            Console.WriteLine("Replacing false AND exp with false or relacing true OR exp with true");
-                        }
+                        stringBuilder?.AppendLine(
+                            "Replacing false AND exp with false or relacing true OR exp with true");
                         return CreateChain(constants, Lhs, rhs);
                     }
 
@@ -1654,11 +1575,8 @@ namespace gp
                         //We can eliminate the constant RHS term and convert LHS to a boolean expression.
                         //(exp AND true) => (exp <> 0)
                         //(exp OR false) => (exp <> 0)
-                        if (trace)
-                        {
-                            Console.WriteLine("Replacing exp AND tru or exp OR false with exp <> 0");
-                        }
-                        return Lhs.LimitToZerOrOne(constants, trace);
+                        stringBuilder?.AppendLine("Replacing exp AND tru or exp OR false with exp <> 0");
+                        return Lhs.LimitToZerOrOne(constants, stringBuilder);
                     }
                 }
             }
@@ -1675,20 +1593,17 @@ namespace gp
             return CreateChain(lhs, CreateConstantCallTree(rhs, constants));
         }
 
-        private CallTree ReplaceLhsWithoutSideEffectsInChainWithLhs(bool trace)
+        private CallTree ReplaceLhsWithoutSideEffectsInChainWithLhs(StringBuilder stringBuilder)
         {
             if (_symbol == Symbols.Chain && Lhs.LacksSideEffects)
             {
-                if (trace)
-                {
-                    Console.WriteLine("Replacing exp1=>exp2 with exp2");
-                }
+                stringBuilder?.AppendLine("Replacing exp1=>exp2 with exp2");
                 return Rhs;
             }
             return null;
         }
 
-        private CallTree SimplifyArithmeticExpression(ConstantsSet constants, Symbols symbol, CallTree lhs, CallTree rhs, bool trace)
+        private CallTree SimplifyArithmeticExpression(ConstantsSet constants, Symbols symbol, CallTree lhs, CallTree rhs, StringBuilder stringBuilder)
         {
             if (!IsArithmeticExpression)
             {
@@ -1700,10 +1615,7 @@ namespace gp
                 if (symbol == Symbols.Add && lhs.IsZero)
                 {
                     //0 + exp => exp
-                    if (trace)
-                    {
-                        Console.WriteLine("Replacing 0+exp with exp");
-                    }
+                    stringBuilder?.AppendLine("Replacing 0+exp with exp");
                     return rhs;
                 }
 
@@ -1711,21 +1623,14 @@ namespace gp
                 {
                     //0*exp and 0/exp are both 0
                     //(If RHS lacks side effects it might be removed later according to ReplaceLhsWithoutSideEffectsInChainWithLhs())
-                    if (trace)
-                    {
-                        Console.WriteLine("Replacing 0*exp or 0/exp with 0");
-                    }
-
+                    stringBuilder?.AppendLine("Replacing 0*exp or 0/exp with 0");
                     return lhs;
                 }
 
                 if (symbol == Symbols.Mul && lhs.Result == 1.0m)
                 {
                     //1.0 * exp => exp
-                    if (trace)
-                    {
-                        Console.WriteLine("Replacing 1*exp with exp");
-                    }
+                    stringBuilder?.AppendLine("Replacing 1*exp with exp");
 
                     return rhs;
                 }
@@ -1738,10 +1643,7 @@ namespace gp
                     if (rhs.Result == 1.0m)
                     {
                         //exp / 1.0 => exp
-                        if (trace)
-                        {
-                            Console.WriteLine("Replacing exp/1.0 with exp");
-                        }
+                        stringBuilder?.AppendLine("Replacing exp/1.0 with exp");
                         return lhs;
                     }
 
@@ -1749,10 +1651,7 @@ namespace gp
                     if (rhs.IsZero)
                         //But we check by seeing if dividing 1.0 with rhs actually gives NaN.
                     {
-                        if (trace)
-                        {
-                            Console.WriteLine("Replacing exp/0.0 with exp");
-                        }
+                        stringBuilder?.AppendLine("Replacing exp/0.0 with exp");
                         return lhs;
                     }
                 }
@@ -1760,21 +1659,21 @@ namespace gp
             return null;
         }
 
-        private CallTree SimplifyArithmeticExpression(ConstantsSet constants, bool trace)
+        private CallTree SimplifyArithmeticExpression(ConstantsSet constants, StringBuilder stringBuilder)
         {
             CallTree callTree = null;
             if (_preEvaluatedArgs.Length == 2)
             {
-                callTree = SimplifyArithmeticExpression(constants, _symbol, Lhs, Rhs, trace);
+                callTree = SimplifyArithmeticExpression(constants, _symbol, Lhs, Rhs, stringBuilder);
                 if (IsCommutative)
                 {
-                    callTree = callTree ?? SimplifyArithmeticExpression(constants, _symbol, Rhs, Lhs, trace);
+                    callTree = callTree ?? SimplifyArithmeticExpression(constants, _symbol, Rhs, Lhs, stringBuilder);
                 }
             }
             return callTree;
         }
 
-        private CallTree ReplaceSubtractionWithConstantWithAdditionToNegative(ConstantsSet constants, bool trace)
+        private CallTree ReplaceSubtractionWithConstantWithAdditionToNegative(ConstantsSet constants, StringBuilder stringBuilder)
         {
             if (_symbol == Symbols.Sub)
             {
@@ -1782,20 +1681,14 @@ namespace gp
                 switch (Rhs._symbol)
                 {
                     case Symbols.DoubleLiteral:
-                        if (trace)
-                        {
-                            Console.WriteLine("Replacing exp-DoubleLiteral with -DoubleLiteral+exp");
-                        }
+                        stringBuilder?.AppendLine("Replacing exp-DoubleLiteral with -DoubleLiteral+exp");
                         return CreateBinaryCalltree(Symbols.Add,
                                                     CreateConstantCallTree(-Rhs.Result,
-                                                                           constants),
+                                                                           constants, stringBuilder),
                                                     Lhs);
 
                     case Symbols.IntegerLiteral:
-                        if (trace)
-                        {
-                            Console.WriteLine("Replacing exp-IntegerLiteral with -IntegerLiteral+exp");
-                        }
+                        stringBuilder?.AppendLine("Replacing exp-IntegerLiteral with -IntegerLiteral+exp");
                         //If Rhs is 0 the next simplification will take care of it.
                         return CreateBinaryCalltree(Symbols.Add,
                                                     CreateConstantCallTree((int) -Rhs.Result,
@@ -1804,10 +1697,7 @@ namespace gp
 
 
                     case Symbols.Noop:
-                        if (trace)
-                        {
-                            Console.WriteLine("Replacing exp-Noop with Noop");
-                        }
+                        stringBuilder?.AppendLine("Replacing exp-Noop with Noop");
                         //exp - Noop will evaluate to Noop so we just change the symbol to chain
                         return new CallTree(Symbols.Chain, _varnumber, _preEvaluatedArgs);
                 }
@@ -1815,17 +1705,14 @@ namespace gp
             return null;
         }
 
-        private CallTree ReplaceTernaryIfWithNoopBranchWithBinaryIf(bool trace)
+        private CallTree ReplaceTernaryIfWithNoopBranchWithBinaryIf(StringBuilder stringBuilder)
         {
             if (_symbol == Symbols.Ifelse)
             {
                 if (_conditionalChildren[1]._symbol == Symbols.Noop)
                 {
                     //IF guard THEN exp ELSE Noop => IF guard THEN exp
-                    if (trace)
-                    {
-                        Console.WriteLine("Replacing IF exp1 THEN exp2 ELSE Noop with IF exp1 THEN exp2");
-                    }
+                    stringBuilder?.AppendLine("Replacing IF exp1 THEN exp2 ELSE Noop with IF exp1 THEN exp2");
                     return new CallTree(Symbols.If, _varnumber, _preEvaluatedArgs,
                                         new[] {_conditionalChildren[0]});
                 }
@@ -1833,10 +1720,7 @@ namespace gp
                 if (_conditionalChildren[0]._symbol == Symbols.Noop)
                 {
                     //IF guard THEN Noop ELSE exp => IF NOT guard THEN exp
-                    if (trace)
-                    {
-                        Console.WriteLine("Replacing IF exp1 THEN Noop ELSE exp2 with IF NOT(exp1) THEN exp2");
-                    }
+                    stringBuilder?.AppendLine("Replacing IF exp1 THEN Noop ELSE exp2 with IF NOT(exp1) THEN exp2");
                     return new CallTree(Symbols.If, _varnumber,
                                         new[] {_preEvaluatedArgs[0].WrapExpressionInNegation()},
                                         new[] {_conditionalChildren[0]});
@@ -1850,7 +1734,7 @@ namespace gp
             return new CallTree(Symbols.Not, _varnumber, new[] {this});
         }
 
-        private CallTree ReplaceWithConstantDueToRhslhsEquivalence(ConstantsSet constants, bool trace)
+        private CallTree ReplaceWithConstantDueToRhslhsEquivalence(ConstantsSet constants, StringBuilder stringBuilder)
         {
             if (LacksSideEffects)
             {
@@ -1873,10 +1757,7 @@ namespace gp
                         {
                             if (LhsEqualsRhs())
                             {
-                                if (trace)
-                                {
-                                    Console.WriteLine("Replacing exp == | >= | <= exp with true");
-                                }
+                                stringBuilder?.AppendLine("Replacing exp == | >= | <= exp with true");
                                 return CreateConstantCallTree(true, constants);
                             }
                             break;
@@ -1888,10 +1769,7 @@ namespace gp
                         {
                             if (LhsEqualsRhs())
                             {
-                                if (trace)
-                                {
-                                    Console.WriteLine("Replacing exp <> | < | > exp with false");
-                                }
+                                stringBuilder?.AppendLine("Replacing exp <> | < | > exp with false");
                                 return CreateConstantCallTree(false, constants);
                             }
                             break;
@@ -1901,10 +1779,7 @@ namespace gp
                         {
                             if (LhsEqualsRhs() && Rhs.ResultIsNeverZero)
                             {
-                                if (trace)
-                                {
-                                    Console.WriteLine("Replacing exp/exp with 1");
-                                }
+                                stringBuilder?.AppendLine("Replacing exp/exp with 1");
                                 return CreateConstantCallTree(1, constants);
                             }
                             break;
@@ -1917,22 +1792,16 @@ namespace gp
                             {
                                 if (_symbol == Symbols.Xor) //NaN is interpreted as true here.
                                 {
-                                    if (trace)
-                                    {
-                                        Console.WriteLine("Replacing exp XOR exp with false");
-                                    }
+                                    stringBuilder?.AppendLine("Replacing exp XOR exp with false");
                                     return CreateConstantCallTree(false, constants);
                                 }
                                 //a AND a => a, a OR a => a, a XOR a => false, a XOR(NOT(a)) => true
-                                return Lhs.LimitToZerOrOne(constants, trace);
+                                return Lhs.LimitToZerOrOne(constants, stringBuilder);
                             }
                             if ((Lhs._symbol == Symbols.Not && Lhs.Operand.Equals(Rhs)) ||
                                 (Rhs._symbol == Symbols.Not && Rhs.Operand.Equals(Lhs)))
                             {
-                                if (trace)
-                                {
-                                    Console.WriteLine("Replacing exp relop NOT(exp) with constant");
-                                }
+                                stringBuilder?.AppendLine("Replacing exp relop NOT(exp) with constant");
                                 //One side is the negation of the other. Or or Xor both become true.
                                 return CreateConstantCallTree(_symbol != Symbols.And, constants);
                             }
@@ -1940,55 +1809,45 @@ namespace gp
                         }
                     case Symbols.Sub:
                     case Symbols.Add:
-                        return SummariseTerms(constants, trace);
+                        return SummariseTerms(constants, stringBuilder);
                 }
             }
             return null;
         }
 
-        private CallTree SummariseTerms(ConstantsSet constants, bool trace)
+        private CallTree SummariseTerms(ConstantsSet constants, StringBuilder stringBuilder)
         {
             if (LhsEqualsRhs())
             {
                 if (_symbol == Symbols.Sub)
                 {
                     //(exp-exp) = 0
-                    if (trace)
-                    {
-                        Console.WriteLine("Replacing exp-exp with 0");
-                    }
+                    stringBuilder?.AppendLine("Replacing exp-exp with 0");
 
                     return CreateConstantCallTree(0, constants);
                 }
                 if (_symbol == Symbols.Add)
                 {
                     //exp+exp => 2*exp (Nan + Nan = Nan, 2*Nan = Nan)
-                    if (trace)
-                    {
-                        Console.WriteLine("Replacing exp+exp with 2*exp");
-                    }
+                    stringBuilder?.AppendLine("Replacing exp+exp with 2*exp");
                     return CreateBinaryCalltree(Symbols.Mul, CreateConstantCallTree(2, constants),
                                                 Lhs);
                 }
             }
 
-            CallTree callTree = AddSingleTerm(constants, Lhs, Rhs, trace);
-            callTree = callTree ?? AddSingleTerm(constants, Rhs, Lhs, trace);
-            return callTree ?? SummariseMultipliedTerms(trace);
+            CallTree callTree = AddSingleTerm(constants, Lhs, Rhs, stringBuilder);
+            return callTree ?? SummariseMultipliedTerms(stringBuilder);
         }
 
-        private CallTree AddSingleTerm(ConstantsSet constants, CallTree lhs, CallTree rhs, bool trace)
+        private CallTree AddSingleTerm(ConstantsSet constants, CallTree lhs, CallTree rhs, StringBuilder stringBuilder)
         {
             if (lhs._symbol == Symbols.Mul)
             {
                 if (rhs.Equals(lhs.Rhs))
                 {
-                    //(n*exp)+exp => ((n+1)*exp) (obviously, if n or exp is Nan then result is Nan in either case)
-                    //(n*exp)-exp => ((n-1)*exp) (obviously, if n or exp is Nan then result is Nan in either case)
-                    if (trace)
-                    {
-                        Console.WriteLine("Replacing (n*exp)-+exp with (n+-1)*exp");
-                    }
+                    //(n*exp)+exp => ((n+1)*exp)
+                    //(n*exp)-exp => ((n-1)*exp)
+                    stringBuilder?.AppendLine("Replacing (n*exp)-+exp with (n+-1)*exp");
                     CallTree newLhs = CreateBinaryCalltree(_symbol, lhs.Lhs,
                                                            CreateConstantCallTree(1, constants));
                     return CreateBinaryCalltree(lhs._symbol, newLhs, rhs);
@@ -1996,21 +1855,46 @@ namespace gp
 
                 if (rhs.Equals(lhs.Lhs))
                 {
-                    //(exp*n)+exp => (n+1)*exp (obviously, if n or exp is Nan then result is Nan in either case)
-                    //(exp*n)-exp => (n-1)*exp (obviously, if n or exp is Nan then result is Nan in either case)
-                    if (trace)
-                    {
-                        Console.WriteLine("Replacing (exp*n)-+exp with (n+-1)*exp");
-                    }
+                    //(exp*n)+exp => (n+1)*exp
+                    //(exp*n)-exp => (n-1)*exp
+                    stringBuilder?.AppendLine("Replacing (exp*n)-+exp with (n+-1)*exp");
                     CallTree newLhs = CreateBinaryCalltree(_symbol, CreateConstantCallTree(1, constants),
                                                            lhs.Rhs);
                     return CreateBinaryCalltree(lhs._symbol, newLhs, rhs);
                 }
             }
+
+            if (rhs._symbol == Symbols.Mul)
+            {
+                if (lhs.Equals(rhs.Rhs))
+                {
+                    //(exp+(n*exp) => (1+n)*exp
+                    //(exp-(n*exp) => (1-n)*exp
+                    stringBuilder?.AppendLine("Replacing exp+-(n*exp) with (1+-n)*exp");
+                    CallTree newLhs = CreateBinaryCalltree(_symbol,
+                        CreateConstantCallTree(1, constants),
+                        rhs.Lhs);
+
+                    return CreateBinaryCalltree(rhs._symbol, newLhs, rhs.Rhs);
+                }
+
+                if (lhs.Equals(rhs.Lhs))
+                {
+                    //(exp+(exp*n) => (1+n)*exp
+                    //(exp-(exp*n) => (1-n)*exp
+                    stringBuilder?.AppendLine("Replacing exp+-(exp*n) with (1+-n)*exp");
+                    CallTree newLhs = CreateBinaryCalltree(_symbol,
+                        CreateConstantCallTree(1, constants),
+                        rhs.Rhs);
+
+                    return CreateBinaryCalltree(rhs._symbol, newLhs, rhs.Lhs);
+                }
+            }
+
             return null;
         }
 
-        private CallTree SummariseMultipliedTerms(bool trace)
+        private CallTree SummariseMultipliedTerms(StringBuilder stringBuilder)
         {
             if (Lhs._symbol == Symbols.Mul && Rhs._symbol == Symbols.Mul)
             {
@@ -2019,40 +1903,28 @@ namespace gp
                 CallTree addedRhsTerm;
                 if (Lhs.Lhs.Equals(Rhs.Lhs))
                 {
-                    if (trace)
-                    {
-                        Console.WriteLine("Replacing (exp*n)+-(exp*m) with (n+-m)*exp");
-                    }
+                    stringBuilder?.AppendLine("Replacing (exp*n)+-(exp*m) with (n+-m)*exp");
                     equalTerms = Lhs.Lhs;
                     addedLhsTerm = Lhs.Rhs;
                     addedRhsTerm = Rhs.Rhs;
                 }
                 else if (Lhs.Lhs.Equals(Rhs.Rhs))
                 {
-                    if (trace)
-                    {
-                        Console.WriteLine("Replacing (exp*n)+-(m*exp) with (n+-m)*exp");
-                    }
+                    stringBuilder?.AppendLine("Replacing (exp*n)+-(m*exp) with (n+-m)*exp");
                     equalTerms = Lhs.Lhs;
                     addedLhsTerm = Lhs.Rhs;
                     addedRhsTerm = Rhs.Lhs;
                 }
                 else if (Lhs.Rhs.Equals(Rhs.Lhs))
                 {
-                    if (trace)
-                    {
-                        Console.WriteLine("Replacing (n*exp)+-(m*exp) with (n+-m)*exp");
-                    }
+                    stringBuilder?.AppendLine("Replacing (n*exp)+-(m*exp) with (n+-m)*exp");
                     equalTerms = Lhs.Rhs;
                     addedLhsTerm = Lhs.Lhs;
                     addedRhsTerm = Rhs.Rhs;
                 }
                 else if (Lhs.Rhs.Equals(Rhs.Rhs))
                 {
-                    if (trace)
-                    {
-                        Console.WriteLine("Replacing (n*exp)+-(exp*m) with (n+-m)*exp");
-                    }
+                    stringBuilder?.AppendLine("Replacing (n*exp)+-(exp*m) with (n+-m)*exp");
                     equalTerms = Lhs.Rhs;
                     addedLhsTerm = Lhs.Lhs;
                     addedRhsTerm = Rhs.Lhs;
@@ -2074,7 +1946,7 @@ namespace gp
             return Lhs.Equals(Rhs);
         }
 
-        private CallTree ReplaceAssignmentToSelfOrNoopWithVariable(bool trace)
+        private CallTree ReplaceAssignmentToSelfOrNoopWithVariable(StringBuilder stringBuilder)
         {
             if (_symbol == Symbols.AssignWorkingVariable)
             {
@@ -2084,20 +1956,14 @@ namespace gp
                 {
                     //(a := a) => a
                     //a:=(a:=x) => (a:=x)
-                    if (trace)
-                    {
-                        Console.WriteLine("Replacing assignment of Y{0} to itself with itself", Operand._qualifier);
-                    }
+                    stringBuilder?.AppendLine($"Replacing assignment of Y{Operand._qualifier} to itself with itself");
                     return Operand;
                 }
 
                 if (Operand._symbol == Symbols.Noop)
                 {
                     //(a := Noop) => a
-                    if (trace)
-                    {
-                        Console.WriteLine("Replacing assignment of Y{0} to Noop with itself", Operand._qualifier);
-                    }
+                    stringBuilder?.AppendLine($"Replacing assignment of Y{Operand._qualifier} to Noop with itself");
                     return new CallTree(Symbols.WorkingVariable, _varnumber, _qualifier);
                 }
             }
@@ -2123,7 +1989,7 @@ namespace gp
             }
         }
 
-        private CallTree GroupConstantsTogetherInAssociativeChain(bool trace)
+        private CallTree GroupConstantsTogetherInAssociativeChain(StringBuilder stringBuilder)
         {
             if (IsAssociative)
             {
@@ -2131,10 +1997,7 @@ namespace gp
                 {
                     /* for all associative operations Op where (expr1 Op expr2 = expr2 Op expr1):
                  constant1 Op (constant2 Op nonconst_expr) => ((constant1 Op constant2) Op conconst_expr) */
-                    if (trace)
-                    {
-                        Console.WriteLine("Moving constant term from RHS.LHS to LHS.RHS of associative chain");
-                    }
+                    stringBuilder?.AppendLine("Moving constant term from RHS.LHS to LHS.RHS of associative chain");
                     return CreateBinaryCalltree(_symbol,
                                                 CreateBinaryCalltree(_symbol, Lhs,
                                                                      Rhs.Lhs),
@@ -2142,10 +2005,7 @@ namespace gp
                 }
                 if (Rhs.IsConstant && Lhs._symbol == _symbol && Lhs.Rhs.IsConstant && !Lhs.Lhs.IsConstant)
                 {
-                    if (trace)
-                    {
-                        Console.WriteLine("Moving constant term from RHS to LHS.LHS of associative chain");
-                    }
+                    stringBuilder?.AppendLine("Moving constant term from RHS to LHS.LHS of associative chain");
                     //Mirror of the above
                     return CreateBinaryCalltree(_symbol,
                                                 CreateBinaryCalltree(_symbol, Rhs,
@@ -2156,7 +2016,7 @@ namespace gp
             return null;
         }
 
-        private CallTree CommutativeMoveSinglyConstOperandFromRhStoLhs(bool trace)
+        private CallTree CommutativeMoveSinglyConstOperandFromRhStoLhs(StringBuilder stringBuilder)
         {
             if (IsSemanticallyCommutative)
             {
@@ -2164,10 +2024,7 @@ namespace gp
                 {
                     /*for all commutative operations Op where (expr1 Op expr2 = expr2 Op expr1):
                  (nonconst_expr Op constant1) => (constant1 Op nonconst_expr)*/
-                    if (trace)
-                    {
-                        Console.WriteLine("Moving constant RHS term of Commutative operator to LHS");
-                    }
+                    stringBuilder?.AppendLine("Moving constant RHS term of Commutative operator to LHS");
                     //For commutative operations where exactly one operand is a constant we move it to the LHS
                     return CreateBinaryCalltree(_symbol, Rhs, Lhs);
                 }
@@ -2175,7 +2032,7 @@ namespace gp
             return null;
         }
 
-        private CallTree ReplaceSymmetricTernaryOperatorWithChain(ConstantsSet constants, bool trace)
+        private CallTree ReplaceSymmetricTernaryOperatorWithChain(ConstantsSet constants, StringBuilder stringBuilder)
         {
             if (_symbol == Symbols.Ifelse)
             {
@@ -2183,10 +2040,7 @@ namespace gp
                 {
                     //IF exp1 THEN exp2 ELSE exp2 => exp1=>exp2
                     //If both branches of the ternary operator are identical then convert to chain as the result never varies
-                    if (trace)
-                    {
-                        Console.WriteLine("Replacing IF exp1 THEN exp2 ELSE exp2 with exp2");
-                    }
+                    stringBuilder?.AppendLine("Replacing IF exp1 THEN exp2 ELSE exp2 with exp2");
                     return CreateChain(_preEvaluatedArgs[0], _conditionalChildren[0]);
                 }
 
@@ -2196,10 +2050,7 @@ namespace gp
                     //If term THEN term ELSE 0 has the exact same value as term.
                     if (LacksSideEffects)
                     {
-                        if (trace)
-                        {
-                            Console.WriteLine("Replacing IF exp1 THEN exp1 ELSE 0 with exp1");
-                        }
+                        stringBuilder?.AppendLine("Replacing IF exp1 THEN exp1 ELSE 0 with exp1");
                         return _preEvaluatedArgs[0];
                     }
                 }
@@ -2207,10 +2058,7 @@ namespace gp
                 {
                     //IF term THEN .. ELSE term: else branch can be replaced with zero.
                     //However, if BOTH are already zero no substitution can take place
-                    if (trace)
-                    {
-                        Console.WriteLine("Replacing IF exp1 THEN exp2 ELSE exp1 with IF exp1 THEN exp2 ELSE 0");
-                    }
+                    stringBuilder?.AppendLine("Replacing IF exp1 THEN exp2 ELSE exp1 with IF exp1 THEN exp2 ELSE 0");
                     return ReplaceConditionalChild(1, CreateChain(_conditionalChildren[1],
                                                                   CreateConstantCallTree(0, constants)));
                 }
@@ -2218,7 +2066,7 @@ namespace gp
             return null;
         }
 
-        private CallTree SimplifyConditionalEvaluation(bool trace)
+        private CallTree SimplifyConditionalEvaluation(StringBuilder stringBuilder)
         {
             switch (_symbol)
             {
@@ -2229,18 +2077,12 @@ namespace gp
                             if (Lhs.Bresult)
                             {
                                 //IF true THEN expr => expr
-                                if (trace)
-                                {
-                                    Console.WriteLine("Replacing IF true THEN expr with expr");
-                                }
+                                stringBuilder?.AppendLine("Replacing IF true THEN expr with expr");
 
                                 return Rhs;
                             }
                             //IF false THEN expr => noop
-                            if (trace)
-                            {
-                                Console.WriteLine("Replacing IF false THEN expr with Noop");
-                            }
+                            stringBuilder?.AppendLine("Replacing IF false THEN expr with Noop");
                             return new CallTree(Symbols.Noop, _varnumber);
                         }
                         break;
@@ -2249,10 +2091,7 @@ namespace gp
                     {
                         if (_conditionalChildren[0].IsConstant && !_conditionalChildren[0].Bresult)
                         {
-                            if (trace)
-                            {
-                                Console.WriteLine("Replacing WHILE false DO expr with Noop");
-                            }
+                            stringBuilder?.AppendLine("Replacing WHILE false DO expr with Noop");
                             //WHILE false do expr => noop
                             return new CallTree(Symbols.Noop, _varnumber);
                         }
@@ -2265,21 +2104,16 @@ namespace gp
                         {
                             //IF true THEN expr1 ELSE expr2 => expr1
                             //IF false THEN expr1 ELSE expr2 => expr2
-                            if (trace)
-                            {
-                                Console.WriteLine("Replacing IF true|false THEN expr1 ELSE expr2 with expr1 or expr2");
-                            }
+                            stringBuilder?.AppendLine(
+                                "Replacing IF true|false THEN expr1 ELSE expr2 with expr1 or expr2");
                             return _preEvaluatedArgs[0].Bresult ? _conditionalChildren[0] : _conditionalChildren[1];
                         }
 
                         if (_preEvaluatedArgs[0]._symbol == Symbols.Not)
                         {
                             //IIF (not exp) THEN exp1 ELSE exp2 => IF exp THEN exp2 else EXP1
-                            if (trace)
-                            {
-                                Console.WriteLine(
-                                    "Replacing IF NOT(true|false) THEN expr1 ELSE expr2 with expr1 or expr2");
-                            }
+                            stringBuilder?.AppendLine(
+                                "Replacing IF NOT(true|false) THEN expr1 ELSE expr2 with expr1 or expr2");
                             return new CallTree(_symbol, _varnumber, new[] {_preEvaluatedArgs[0].Operand},
                                                 new[] {_conditionalChildren[1], _conditionalChildren[0]});
                         }
@@ -2289,7 +2123,7 @@ namespace gp
             return null;
         }
 
-        private CallTree LimitToZerOrOne(ConstantsSet constants, bool trace)
+        private CallTree LimitToZerOrOne(ConstantsSet constants, StringBuilder stringBuilder)
         {
             //unless already of bool type
             if (IsBoolean)
@@ -2299,41 +2133,29 @@ namespace gp
 
             if (ResultIsNeverZero)
             {
-                if (trace)
-                {
-                    Console.WriteLine("Replacing expression that can never be zero with true");
-                }
+                stringBuilder?.AppendLine("Replacing expression that can never be zero with true");
                 //If the result cannot be zero we replace this expression with an expression returning true
                 return CreateChain(constants, this, true);
             }
 
             //Wrap this expression exp in "(0 <> exp)"
-            if (trace)
-            {
-                Console.WriteLine("Wrapping expression in 0 <> exp to be used as boolean");
-            }
+            stringBuilder?.AppendLine("Wrapping expression in 0 <> exp to be used as boolean");
             return new CallTree(Symbols.Neq, _varnumber,
                                 new[] {CreateConstantCallTree(0, constants), this});
         }
 
-        private CallTree UnwrapLimitationToZeroOrOne(CallTree lhs, CallTree rhs, bool trace)
+        private CallTree UnwrapLimitationToZeroOrOne(CallTree lhs, CallTree rhs, StringBuilder stringBuilder)
         {
             if (_symbol == Symbols.Neq && lhs.IsZero)
             {
-                if (trace)
-                {
-                    Console.WriteLine("Unwrapping 0 <> exp as exp");
-                }
+                stringBuilder?.AppendLine("Unwrapping 0 <> exp as exp");
                 //(0 <> exp) => exp
                 return rhs;
             }
 
             if (_symbol == Symbols.Eq && lhs.IsZero)
             {
-                if (trace)
-                {
-                    Console.WriteLine("Replacing 0 = exp with NOT(exp)");
-                }
+                stringBuilder?.AppendLine("Replacing 0 = exp with NOT(exp)");
                 //(0 = exp) => NOT(exp)
                 return rhs.WrapExpressionInNegation();
             }
@@ -2341,12 +2163,12 @@ namespace gp
             return null;
         }
 
-        private CallTree UnwrapBooleanExpression(ConstantsSet constants, bool trace)
+        private CallTree UnwrapBooleanExpression(ConstantsSet constants, StringBuilder stringBuilder)
         {
             if (_symbol == Symbols.Eq || _symbol == Symbols.Neq)
             {
-                CallTree callTree = UnwrapLimitationToZeroOrOne(Lhs, Rhs, trace);
-                return callTree ?? UnwrapLimitationToZeroOrOne(Rhs, Lhs, trace);
+                CallTree callTree = UnwrapLimitationToZeroOrOne(Lhs, Rhs, stringBuilder);
+                return callTree ?? UnwrapLimitationToZeroOrOne(Rhs, Lhs, stringBuilder);
             }
 
             if (_symbol == Symbols.If)
@@ -2356,11 +2178,8 @@ namespace gp
                     if (_preEvaluatedArgs[0]._symbol == Symbols.Not &&
                         _preEvaluatedArgs[0].Operand.Equals(_conditionalChildren[0]))
                     {
-                        if (trace)
-                        {
-                            Console.WriteLine(
-                                "Replacing IF exp THEN NOT(exp) with false");
-                        }
+                        stringBuilder?.AppendLine(
+                            "Replacing IF exp THEN NOT(exp) with false");
                         //if not X then X is always zero/false and may be replaced with constant if there are no side effects.
                         return CreateConstantCallTree(false, constants);
                     }
@@ -2368,11 +2187,8 @@ namespace gp
                     if (_conditionalChildren[0]._symbol == Symbols.Not &&
                         _conditionalChildren[0].Operand.Equals(_preEvaluatedArgs[0]))
                     {
-                        if (trace)
-                        {
-                            Console.WriteLine(
-                                "Replacing IF NOT(exp) THEN exp with false");
-                        }
+                        stringBuilder?.AppendLine(
+                            "Replacing IF NOT(exp) THEN exp with false");
 
                         //if not X then X is always zero/false and may be replaced with constant zero if there are no side effects.
                         return CreateConstantCallTree(0, constants);
@@ -2381,10 +2197,7 @@ namespace gp
                     if (_preEvaluatedArgs[0].Equals(_conditionalChildren[0]))
                     {
                         //If term then term can never be zero because if term is zero the result is NaN.
-                        if (trace)
-                        {
-                            Console.WriteLine("Replacing IF term THEN term with term");
-                        }
+                        stringBuilder?.AppendLine("Replacing IF term THEN term with term");
                         return CreateChain(constants, this, true);
                     }
                 }
@@ -2397,10 +2210,7 @@ namespace gp
                     {
                         //This is just a conversion to bool. We want to use this expression as a bool anyway.
                         //IF exp THEN 3 ELSE 0 => exp
-                        if (trace)
-                        {
-                            Console.WriteLine("Replacing IF exp THEN true ELSE false with exp");
-                        }
+                        stringBuilder?.AppendLine("Replacing IF exp THEN true ELSE false with exp");
                         return _preEvaluatedArgs[0];
                     }
 
@@ -2408,10 +2218,7 @@ namespace gp
                     {
                         //This is just a negated bool expression. We want to use this experssion as a bool anyway.
                         //IF exp THEN 0 ELSE 3 => NOT(exp)
-                        if (trace)
-                        {
-                            Console.WriteLine("Replacing IF exp THEN false ELSE true with NOT(exp)");
-                        }
+                        stringBuilder?.AppendLine("Replacing IF exp THEN false ELSE true with NOT(exp)");
                         return _preEvaluatedArgs[0].WrapExpressionInNegation();
                     }
 
@@ -2421,10 +2228,7 @@ namespace gp
                         //Here the result of the guard is discarded and we just use the boolean result of either child.
                         //IF exp THEN 2 ELSE 3 => exp=>1
                         //IF exp THEN 0 ELSE 0 => exp=>0
-                        if (trace)
-                        {
-                            Console.WriteLine("Replacing IF exp THEN true|false ELSE true|false with true|false");
-                        }
+                        stringBuilder?.AppendLine("Replacing IF exp THEN true|false ELSE true|false with true|false");
                         return CreateChain(constants, _preEvaluatedArgs[0], _conditionalChildren[0].Bresult);
                     }
                 }
@@ -2439,7 +2243,7 @@ namespace gp
             return CreateConstantCallTree(constant ? 1 : 0, constants);
         }
 
-        private CallTree CreateConstantCallTree(decimal constant, ConstantsSet constants)
+        private CallTree CreateConstantCallTree(decimal constant, ConstantsSet constants, StringBuilder stringBuilder)
         {
             if (constant == (int)(constant))
             {
@@ -2449,7 +2253,7 @@ namespace gp
             var callTree = new CallTree(Symbols.DoubleLiteral, _varnumber,
                                         constants.Doubles.Include(constant));
             //Cannot be further simplified
-            if (!callTree.Tick(constants))
+            if (!callTree.Tick(constants, stringBuilder))
             {
                 throw new InvalidOperationException("CallTree IsConstant but Tick() returns false");
             }
@@ -2461,7 +2265,7 @@ namespace gp
             return new CallTree(Symbols.IntegerLiteral, _varnumber, constants.Integers.Include(constant));
         }
 
-        private CallTree ReplaceExpressionWithConstant(ConstantsSet constants, bool trace)
+        private CallTree ReplaceExpressionWithConstant(ConstantsSet constants, StringBuilder stringBuilder)
         {
             //If all args are constants and there are no conditional args we can
             //tick this exactly once and use the result as a new constant that we return.
@@ -2496,27 +2300,24 @@ namespace gp
                 NOT false => true
              */
             _preEvaluatedArgIndex = _preEvaluatedArgs.Length;
-            if (!Tick(constants))
+            if (!Tick(constants, stringBuilder))
             {
-                throw new InvalidOperationException("All pre-evalued arguments are constants but Tick() returns false");
+                throw new InvalidOperationException("All pre-evaluated arguments are constants but Tick() returns false");
             }
 
-            if (trace)
-            {
-                Console.WriteLine("Replacing expression with only constant arguments with constant");
-            }
-            return CreateConstantCallTree(Result, constants);
+            stringBuilder?.AppendLine("Replacing expression with only constant arguments with constant");
+            return CreateConstantCallTree(Result, constants, stringBuilder);
         }
 
-        private CallTree SimplifyPreEvaluatedArgs(ConstantsSet constants, bool trace)
+        private CallTree SimplifyPreEvaluatedArgs(ConstantsSet constants, StringBuilder stringBuilder)
         {
             for (int i = 0; i < _preEvaluatedArgs.Length; ++i)
             {
-                CallTree simplyfiedCallTree = _preEvaluatedArgs[i].Simplify(constants, trace);
+                CallTree simplyfiedCallTree = _preEvaluatedArgs[i].Simplify(constants, stringBuilder);
                 if (TakesBooleanPreEvaluatedArgs)
                 {
                     CallTree unwrappedCallTree =
-                        (simplyfiedCallTree ?? _preEvaluatedArgs[i]).UnwrapBooleanExpression(constants, trace);
+                        (simplyfiedCallTree ?? _preEvaluatedArgs[i]).UnwrapBooleanExpression(constants, stringBuilder);
                     simplyfiedCallTree = unwrappedCallTree ?? simplyfiedCallTree;
                 }
 
@@ -2528,17 +2329,17 @@ namespace gp
             return null;
         }
 
-        private CallTree SimplifyConditionalChildren(ConstantsSet constants, bool trace)
+        private CallTree SimplifyConditionalChildren(ConstantsSet constants, StringBuilder stringBuilder)
         {
             for (int i = 0; i < _conditionalChildren.Length; ++i)
             {
-                CallTree simplyfiedCallTree = _conditionalChildren[i].Simplify(constants, trace);
+                CallTree simplyfiedCallTree = _conditionalChildren[i].Simplify(constants, stringBuilder);
                 if (TakesBooleanConditionalChildren &&
                     (i == 0 || _symbol != Symbols.While))
                 {
                     //For a while loop we can remove any comparisons with 0 around the guard expression
                     CallTree unwrappedCallTree =
-                        (simplyfiedCallTree ?? _conditionalChildren[i]).UnwrapBooleanExpression(constants, trace);
+                        (simplyfiedCallTree ?? _conditionalChildren[i]).UnwrapBooleanExpression(constants, stringBuilder);
                     simplyfiedCallTree = unwrappedCallTree ?? simplyfiedCallTree;
                 }
                 if (simplyfiedCallTree != null)
@@ -2635,7 +2436,8 @@ namespace gp
             }
         }
 
-        public CallTree PurgeUnassignedVariables(ConstantsSet constants, List<int> assignedVariables)
+        public CallTree PurgeUnassignedVariables(ConstantsSet constants, List<int> assignedVariables,
+            StringBuilder stringBuilder)
         {
             if (IsConstant || _symbol == Symbols.InputArgument)
             {
@@ -2658,7 +2460,7 @@ namespace gp
             {
                 if (Operand.IsConstant)
                 {
-                    Operand.Tick(constants);
+                    Operand.Tick(constants, stringBuilder);
                 }
 
                 if (assignedVariables.IndexOf(_qualifier) < 0)
@@ -2679,20 +2481,20 @@ namespace gp
             {
                 //If this is a while loop we have to consider variables assigned in the body or guard as already assigned
                 //when we are about to evaluate the body or the guard!
-                FindAssignedVariables(constants, assignedVariables);
+                FindAssignedVariables(constants, assignedVariables, stringBuilder);
             }
 
             //For a IF THEN ELSE the guard can initialise variables that are also initialised in either branch, but their
             //initialisation in one branch is not visible from the other.
             if (_symbol == Symbols.Ifelse)
             {
-                CallTree callTree = _preEvaluatedArgs[0].PurgeUnassignedVariables(constants, assignedVariables);
+                CallTree callTree = _preEvaluatedArgs[0].PurgeUnassignedVariables(constants, assignedVariables, stringBuilder);
                 if (callTree != null)
                 {
                     return CreateTernaryCallTree(callTree, _conditionalChildren[0], _conditionalChildren[1]);
                 }
                 var yesBranchAssignedVariables = new List<int>(assignedVariables);
-                callTree = _conditionalChildren[0].PurgeUnassignedVariables(constants, yesBranchAssignedVariables);
+                callTree = _conditionalChildren[0].PurgeUnassignedVariables(constants, yesBranchAssignedVariables, stringBuilder);
                 if (callTree != null)
                 {
                     Merge(assignedVariables, yesBranchAssignedVariables);
@@ -2700,7 +2502,7 @@ namespace gp
                 }
 
                 var noBranchAssignedVariables = new List<int>(assignedVariables);
-                callTree = _conditionalChildren[1].PurgeUnassignedVariables(constants, noBranchAssignedVariables);
+                callTree = _conditionalChildren[1].PurgeUnassignedVariables(constants, noBranchAssignedVariables, stringBuilder);
                 if (callTree != null)
                 {
                     Merge(assignedVariables, noBranchAssignedVariables);
@@ -2717,7 +2519,7 @@ namespace gp
                 //For all other symbols we assume that all children are executed in order.
                 for (int i = 0; i < _preEvaluatedArgs.Length; ++i)
                 {
-                    CallTree callTree = _preEvaluatedArgs[i].PurgeUnassignedVariables(constants, assignedVariables);
+                    CallTree callTree = _preEvaluatedArgs[i].PurgeUnassignedVariables(constants, assignedVariables, stringBuilder);
                     if (callTree != null)
                     {
                         return ReplacePreEvaluatedArg(i, callTree);
@@ -2725,7 +2527,7 @@ namespace gp
                 }
                 for (int i = 0; i < _conditionalChildren.Length; ++i)
                 {
-                    CallTree callTree = _conditionalChildren[i].PurgeUnassignedVariables(constants, assignedVariables);
+                    CallTree callTree = _conditionalChildren[i].PurgeUnassignedVariables(constants, assignedVariables, stringBuilder);
                     if (callTree != null)
                     {
                         return ReplaceConditionalChild(i, callTree);
@@ -2766,13 +2568,13 @@ namespace gp
             return new CallTree(Symbols.Ifelse, _varnumber, new[] {guard}, new[] {yes, no});
         }
 
-        private void FindAssignedVariables(ConstantsSet constants, IList<int> assignedVariables)
+        private void FindAssignedVariables(ConstantsSet constants, IList<int> assignedVariables, StringBuilder stringBuilder)
         {
             if (_symbol == Symbols.AssignWorkingVariable)
             {
                 if (Operand.IsConstant)
                 {
-                    Operand.Tick(constants);
+                    Operand.Tick(constants, stringBuilder);
                 }
                 if (!Operand.IsZero)
                 {
@@ -2787,16 +2589,17 @@ namespace gp
             {
                 foreach (CallTree callTree in _preEvaluatedArgs)
                 {
-                    callTree.FindAssignedVariables(constants, assignedVariables);
+                    callTree.FindAssignedVariables(constants, assignedVariables, stringBuilder);
                 }
                 foreach (CallTree callTree in _conditionalChildren)
                 {
-                    callTree.FindAssignedVariables(constants, assignedVariables);
+                    callTree.FindAssignedVariables(constants, assignedVariables, stringBuilder);
                 }
             }
         }
 
-        public CallTree PurgeUnusedAssignmentsToVariables(ConstantsSet constants, List<int> usedVariables)
+        public CallTree PurgeUnusedAssignmentsToVariables(ConstantsSet constants, List<int> usedVariables,
+            StringBuilder stringBuilder)
         {
             if (IsConstant || _symbol == Symbols.InputArgument)
             {
@@ -2830,7 +2633,7 @@ namespace gp
             {
                 //If this is a while loop we have to consider variables used in the guard or the body
                 //as already used when we are about to evaluate the body or the guard!
-                FindUsedVariables(constants, usedVariables);
+                FindUsedVariables(constants, usedVariables, stringBuilder);
             }
 
             //For a IF THEN ELSE the guard can initialise variables that are also initialised in either branch, but their
@@ -2839,7 +2642,7 @@ namespace gp
             {
                 var noBranchUsedVariables = new List<int>(usedVariables);
                 CallTree callTree = _conditionalChildren[1].PurgeUnusedAssignmentsToVariables(constants,
-                                                                                              noBranchUsedVariables);
+                                                                                              noBranchUsedVariables, stringBuilder);
                 if (callTree != null)
                 {
                     Merge(usedVariables, noBranchUsedVariables);
@@ -2847,7 +2650,7 @@ namespace gp
                 }
 
                 var yesBranchUsedVariables = new List<int>(usedVariables);
-                callTree = _conditionalChildren[0].PurgeUnusedAssignmentsToVariables(constants, yesBranchUsedVariables);
+                callTree = _conditionalChildren[0].PurgeUnusedAssignmentsToVariables(constants, yesBranchUsedVariables, stringBuilder);
                 if (callTree != null)
                 {
                     Merge(usedVariables, yesBranchUsedVariables);
@@ -2859,7 +2662,7 @@ namespace gp
                 Merge(usedVariables, noBranchUsedVariables);
                 Merge(usedVariables, yesBranchUsedVariables);
 
-                callTree = _preEvaluatedArgs[0].PurgeUnusedAssignmentsToVariables(constants, usedVariables);
+                callTree = _preEvaluatedArgs[0].PurgeUnusedAssignmentsToVariables(constants, usedVariables, stringBuilder);
                 if (callTree != null)
                 {
                     return CreateTernaryCallTree(callTree, _conditionalChildren[0], _conditionalChildren[1]);
@@ -2870,7 +2673,7 @@ namespace gp
                 for (int i = _conditionalChildren.Length - 1; i >= 0; --i)
                 {
                     CallTree callTree = _conditionalChildren[i].PurgeUnusedAssignmentsToVariables(constants,
-                                                                                                  usedVariables);
+                                                                                                  usedVariables, stringBuilder);
                     if (callTree != null)
                     {
                         return ReplaceConditionalChild(i, callTree);
@@ -2880,7 +2683,7 @@ namespace gp
                 //For all other symbols we assume that all children are executed in order.
                 for (int i = _preEvaluatedArgs.Length - 1; i >= 0; --i)
                 {
-                    CallTree callTree = _preEvaluatedArgs[i].PurgeUnusedAssignmentsToVariables(constants, usedVariables);
+                    CallTree callTree = _preEvaluatedArgs[i].PurgeUnusedAssignmentsToVariables(constants, usedVariables, stringBuilder);
                     if (callTree != null)
                     {
                         return ReplacePreEvaluatedArg(i, callTree);
@@ -2891,7 +2694,7 @@ namespace gp
             return null;
         }
 
-        private void FindUsedVariables(ConstantsSet constants, IList<int> usedVariables)
+        private void FindUsedVariables(ConstantsSet constants, IList<int> usedVariables, StringBuilder stringBuilder)
         {
             if (_symbol == Symbols.WorkingVariable)
             {
@@ -2904,11 +2707,11 @@ namespace gp
             {
                 foreach (CallTree callTree in _preEvaluatedArgs)
                 {
-                    callTree.FindUsedVariables(constants, usedVariables);
+                    callTree.FindUsedVariables(constants, usedVariables, stringBuilder);
                 }
                 foreach (CallTree callTree in _conditionalChildren)
                 {
-                    callTree.FindAssignedVariables(constants, usedVariables);
+                    callTree.FindAssignedVariables(constants, usedVariables, stringBuilder);
                 }
             }
         }
@@ -2918,7 +2721,7 @@ namespace gp
         {
             //Whenever we can prove the invariant, that the value of a variable is equivalent to an expression being side-effects
             //neutral, then we can replace usages of that variable with the expression. This can initially lead to longer code
-            //but as a final step, side effects neutral expressions of a sufficient legth, occuring repeatedly in the
+            //but as a final step, side effects neutral expressions of a sufficient length, occuring repeatedly in the
             //code, can be replaced with variables assigned to that value.
             if (IsConstant || _symbol == Symbols.InputArgument)
             {
@@ -3034,8 +2837,7 @@ namespace gp
         {
             if (_symbol == Symbols.AssignWorkingVariable)
             {
-                CallTree callTree;
-                if (replaceableAssignments.TryGetValue(_qualifier, out callTree) && !callTree.Equals(Operand))
+                if (replaceableAssignments.TryGetValue(_qualifier, out var callTree) && !callTree.Equals(Operand))
                 {
                     //Here we found an assignment that CHANGES the current value of the variable.
                     //Make sure it is no longer marked as replaceable.
