@@ -5,18 +5,18 @@ namespace Common
 {
     public class ConstantsSet
     {
-        private readonly IConstantsTable<int> _integers;
+        private readonly IConstantsTable<Int64> _integers;
         private readonly IConstantsTable<decimal> _doubles;
         private readonly INormalDistribution _normalDistribution;
 
         public ConstantsSet(INormalDistribution normalDistribution)
         {
-            _integers = new ConstantsTable<int>();
+            _integers = new ConstantsTable<Int64>();
             _doubles = new ConstantsTable<decimal>();
             _normalDistribution = normalDistribution;
         }
 
-        public ConstantsSet(IConstantsTable<int> integers, IConstantsTable<decimal> doubles, INormalDistribution normalDistribution)
+        public ConstantsSet(IConstantsTable<Int64> integers, IConstantsTable<decimal> doubles, INormalDistribution normalDistribution)
         {
             _integers = integers;
             _doubles = doubles;
@@ -29,25 +29,16 @@ namespace Common
 
         public ConstantsSet(ConstantsSet constantsSet)
         {
-            _integers = new ConstantsTable<int>(constantsSet.Integers);
+            _integers = new ConstantsTable<Int64>(constantsSet.Integers);
             _doubles = new ConstantsTable<decimal>(constantsSet.Doubles);
             _normalDistribution = (INormalDistribution) constantsSet.NormalDistribution.Clone();
         }
 
-        public IConstantsTable<int> Integers
-        {
-            get { return _integers; }
-        }
+        public IConstantsTable<Int64> Integers => _integers;
 
-        public IConstantsTable<decimal> Doubles
-        {
-            get { return _doubles; }
-        }
+        public IConstantsTable<decimal> Doubles => _doubles;
 
-        public INormalDistribution NormalDistribution
-        {
-            get { return _normalDistribution; }
-        }
+        public INormalDistribution NormalDistribution => _normalDistribution;
 
         public int PickIntegerConstant(Random rd)
         {
@@ -72,14 +63,14 @@ namespace Common
             return literal;
         }
 
-        public int MutateRandomIntegerConstant(Random rd)
+        public Int64 MutateRandomIntegerConstant(Random rd)
         {
             if (Integers.Count == 0)
             {
                 return PickIntegerConstant(rd);
             }
             int ix = rd.Next(Integers.Count);
-            int literal;
+            Int64 literal;
             do
             {
                 literal = MutateInteger(rd, NormalDistribution, Integers[ix]);
@@ -100,9 +91,9 @@ namespace Common
             } while (rd.Next(10) == 0);
         }
 
-        static int MutateInteger(Random rd, INormalDistribution normalDistribution, int literal)
+        static Int64 MutateInteger(Random rd, INormalDistribution normalDistribution, Int64 literal)
         {
-            return (int)Math.Round(literal * normalDistribution.Next(rd, 1.0, 0.25));
+            return (Int64)Math.Round(literal * normalDistribution.Next(rd, 1.0, 0.25));
         }
 
         public int PickDoubleConstant(Random rd)

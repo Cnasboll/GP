@@ -277,7 +277,7 @@ namespace gp
             return pc;
         }
 
-        public Program Mutate(Random rd, double pmut)
+        public Program Mutate(Random rd, double pmut, StringBuilder stringBuilder)
         {
             bool mutated = false;
             Program mutatedProgram = this;
@@ -292,11 +292,11 @@ namespace gp
                             WorkingVariablesCount));
                 }
 
-                /*if (rd.NextDouble() < pmut)
+                if (rd.NextDouble() < pmut)
                 {
                     //Simplify this program as efficient as possible
-                    return Simplify();
-                }*/
+                    return Simplify(stringBuilder);
+                }
 
                 mutatedProgram = new Program(this);
                 //len = mutatedProgram.Traverse(0);
@@ -354,7 +354,7 @@ namespace gp
                             }
                         }
 
-                        /*if (rd.NextDouble() < pmut)
+                        if (rd.NextDouble() < pmut)
                         {
                             //Simplifies the expression at the given node.
                             Program simplifiedProgram = mutatedProgram.SimplifyNode(i);
@@ -362,7 +362,7 @@ namespace gp
                             {
                                 return simplifiedProgram;
                             }
-                        }*/
+                        }
 
                         if (rd.NextDouble() < pmut)
                         {
@@ -574,17 +574,17 @@ namespace gp
         public override string ToString()
         {
             var stringBuilder = new StringBuilder();
-            Print(0, stringBuilder, false);
+            Print(0, stringBuilder);
             return stringBuilder.ToString();
         }
 
         public void Print(StringBuilder stringBuilder)
         {
-            Print(0, stringBuilder, false);
+            Print(0, stringBuilder);
             stringBuilder.AppendLine();
         }
 
-        private int Print(int pc, StringBuilder stringBuilder, bool appendMToDecimals)
+        private int Print(int pc, StringBuilder stringBuilder)
         {
             Symbols symbol;
             int qualifier;
@@ -608,7 +608,7 @@ namespace gp
                             break;
                     }
 
-                    pc = Print(pc, stringBuilder, appendMToDecimals);
+                    pc = Print(pc, stringBuilder);
                 }
             }
 
@@ -622,11 +622,6 @@ namespace gp
                     break;
                 case Symbols.DoubleLiteral:
                     stringBuilder.Append(Constants.Doubles[qualifier].ToString(CultureInfo.GetCultureInfo("en-GB").NumberFormat));
-                    if (appendMToDecimals)
-                    {
-                        stringBuilder.Append("m");
-                    }
-
                     break;
                 case Symbols.WorkingVariable:
                     stringBuilder.Append(string.Format("Y{0}", qualifier));
@@ -645,14 +640,14 @@ namespace gp
                     break;
                 case Symbols.Mov:
                     stringBuilder.Append("X[");
-                    pc = Print(pc, stringBuilder, appendMToDecimals);
+                    pc = Print(pc, stringBuilder);
                     stringBuilder.Append("]:=");
-                    return Print(pc, stringBuilder, appendMToDecimals);
+                    return Print(pc, stringBuilder);
                 case Symbols.Ifelse:
                     stringBuilder.Append("IF ");
-                    pc = Print(pc, stringBuilder, appendMToDecimals);
+                    pc = Print(pc, stringBuilder);
                     stringBuilder.Append(" THEN ");
-                    pc = Print(pc, stringBuilder, appendMToDecimals);
+                    pc = Print(pc, stringBuilder);
                     stringBuilder.Append(" ELSE ");
                     break;
                 case Symbols.Add:
@@ -704,7 +699,7 @@ namespace gp
 
             if (arity > 0)
             {
-                pc = Print(pc, stringBuilder, appendMToDecimals);
+                pc = Print(pc, stringBuilder);
                 //Was not a leaf
                 stringBuilder.Append(")");
             }

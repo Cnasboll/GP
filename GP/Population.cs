@@ -201,7 +201,7 @@ namespace gp
                         }
                         else
                         {
-                            newind = _population[Tournament(rd, Gp.Tsize)].Program.Mutate(rd, Gp._pmutPerNode);
+                            newind = _population[Tournament(rd, Gp.Tsize)].Program.Mutate(rd, Gp._pmutPerNode, stringBuilder);
                         }
 
                         offspring = new FitnessEvaluation(newind, _problem);

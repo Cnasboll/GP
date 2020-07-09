@@ -55,9 +55,6 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="Fitness\identity.txt" />
-    <Content Include="Fitness\New Text Document.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
     <Content Include="Fitness\problem1.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>

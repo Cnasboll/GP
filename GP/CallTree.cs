@@ -2245,9 +2245,9 @@ namespace gp
 
         private CallTree CreateConstantCallTree(decimal constant, ConstantsSet constants, StringBuilder stringBuilder)
         {
-            if (constant == (int)(constant))
+            if (constant == (Int64)(constant))
             {
-                return CreateConstantCallTree((int) constant, constants);
+                return CreateConstantCallTree((Int64) constant, constants);
             }
 
             var callTree = new CallTree(Symbols.DoubleLiteral, _varnumber,
@@ -2260,7 +2260,7 @@ namespace gp
             return callTree;
         }
 
-        private CallTree CreateConstantCallTree(int constant, ConstantsSet constants)
+        private CallTree CreateConstantCallTree(Int64 constant, ConstantsSet constants)
         {
             return new CallTree(Symbols.IntegerLiteral, _varnumber, constants.Integers.Include(constant));
         }
